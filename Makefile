@@ -1,6 +1,6 @@
 CC=x86_64-w64-mingw32-gcc
 LD=x86_64-w64-mingw32-gcc
-CFLAGS=-ffreestanding -O0 -Wall -mno-ms-bitfields
+CFLAGS=-ffreestanding -O0 -Wall -mno-ms-bitfields -g
 CPPFLAGS=-Ignu-efi/inc{,/x86_64,/protocol} -Ignu-efi/lib
 LDFLAGS=-nostdlib -Wl,-dll -shared -e efi_main -lgcc
 SUBSYS_APP=-Wl,--subsystem,10
@@ -16,7 +16,7 @@ all: bootx64.efi hv_driver.efi
 bootx64.efi: blueguard.o data.o rtdata.o lib_uefi.o
 	$(CC) $(LDFLAGS) $(SUBSYS_APP) -o $@ $^
 
-hv_driver.efi: hv_driver.o hv_handlers.o data.o rtdata.o lib_uefi.o vmx_api.o vmx_emu.o regs.o reloc_pe.o smp.o ap_trampoline.o spinlock.o
+hv_driver.efi: hv_driver.o hv_handlers.o data.o rtdata.o lib_uefi.o vmx_api.o vmx_emu.o regs.o reloc_pe.o smp.o ap_trampoline.o spinlock.o string.o
 	$(CC) $(LDFLAGS) $(SUBSYS_RTDRV) -o $@ $^
 
 blueguard.o: blueguard.c
@@ -56,6 +56,9 @@ reloc_pe.o: reloc_pe.c reloc_pe.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 smp.o: smp.c smp.h
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
+string.o: string.c string.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 install:

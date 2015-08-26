@@ -4,27 +4,6 @@ EFI_STATUS print(CHAR16 * str){
     return ST->ConOut->OutputString(ST->ConOut, str);
 }
 
-/*EFI_STATUS print_uint(uint32_t n){
-    CHAR16 digit_str[4] = {0};
-    uint32_t divisor = 1000000000;
-    int leading_zero = 1;
-    EFI_STATUS st = EFI_SUCCESS;
-
-
-    while(divisor > 0){
-        uint32_t digit = n / divisor;
-        if(digit != 0 || !leading_zero || divisor == 1){
-            digit_str[0] = digit + '0';
-            st = print(digit_str);
-            leading_zero = 0;
-        }
-        n %= divisor;
-        divisor /= 10;
-    }
-
-    return st;
-}*/
-
 int strcmp(void * a, void * b){
     char * str1 = a;
     char * str2 = b;

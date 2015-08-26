@@ -1,10 +1,12 @@
 #include <efi.h>
 #include <efilib.h>
+#include <stdarg.h>
 #include "smp.h"
 #include "regs.h"
 #include "lib_uefi.h"
 #include "ap_trampoline.h"
 #include "spinlock.h"
+#include "string.h"
 
 int CPU_count = 0;
 volatile int * CPUs_activated;
@@ -259,31 +261,47 @@ int init_smp(void){
 lock_t wait_for_send = 1;
 lock_t wait_for_recv = 0;
 
-CHAR16 msg_buffer[128];
+char msg_buffer[128];
 
 void recv_msg(void){
 	acquire_lock(&wait_for_send);
 	
-	print(msg_buffer);
+	printf("%s", msg_buffer);
 
 	release_lock(&wait_for_recv);
 }
 
-void send_msg(CHAR16 * str){
+void send_msg(char * str){
 	acquire_lock(&wait_for_recv);
 
-	CopyMem(msg_buffer, str, StrSize(str));
+	CopyMem(msg_buffer, str, strlen(str));
 
 	release_lock(&wait_for_send);
 }
 
+int bsp_printf(const char * format, ...){
+	int ret;
+	char str[256];
+	va_list params;
+	va_start(params, format);
+	
+	ret = vsprintf(str, format, params);
+	send_msg(str);
+
+	va_end(params);
+	return ret;
+}
+
 void ap_entry64(uint8_t cpu_number){
 	int i;
-	CHAR16 str[] = L"HELLO, I'M AP 0!\r\n";
-	((char*)str)[28] = cpu_number + '0';
+	//CHAR16 str[] = L"HELLO, I'M AP 0!\r\n";
+	//((char*)str)[28] = cpu_number + '0';
+	//char str[64];
+	//sprintf(str, "HELLO, I'M AP %u!\r\n", cpu_number);
 
 	for(i = 0; i < 4; ++i){
-		send_msg(str);
+		//send_msg(str);
+		bsp_printf("HELLO, I'M AP %u!\r\n", cpu_number);
 	}
 	//while(1);
 }
