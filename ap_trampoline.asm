@@ -168,7 +168,7 @@ AP_CR4:
 	dd 0
 
 ACTIVE_CPU_CNT:
-	dd 4
+	dd 0
 
 tramp_size:
 	dd $ - $$
