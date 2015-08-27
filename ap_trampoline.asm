@@ -13,6 +13,7 @@ global AP_START_LABEL
 global AP_GDTR
 global AP_IDTR
 global AP_CR3
+global AP_CR4
 global JMP_32_PTR
 global AP_32_LABEL
 global JMP_64_PTR
@@ -78,9 +79,11 @@ ap_tramp32:
 	mov fs,ax
 	mov gs,ax
 	mov ss,ax
-	mov eax,100000b ; Set the PAE bit
-	mov cr4,eax
-	mov esi,[bx+AP_CR3-ip1]
+	;mov eax,100000b ; Set the PAE bit
+	;mov cr4,eax
+	mov esi,[bx+AP_CR4-ip1] ; Set PAE bit etc. according to the BSP's CR4
+	mov cr4,esi
+	mov esi,[bx+AP_CR3-ip1] ; Is PML4T really bellow 4 GB?
 	mov cr3,esi
 	mov ecx,0xC0000080 ; Read from the EFER MSR
 	rdmsr
@@ -159,6 +162,9 @@ AP_IDTR:
 	dq 0
 
 AP_CR3:
+	dd 0
+
+AP_CR4:
 	dd 0
 
 ACTIVE_CPU_CNT:

@@ -211,7 +211,7 @@ int init_smp(void){
 	get_gdt_base_limit(&AP_GDTR.base, &AP_GDTR.limit);
 	get_idt_base_limit(&AP_IDTR.base, &AP_IDTR.limit);
 	AP_CR3 = get_cr3();
-	
+	AP_CR4 = get_cr4();	
 
 	uint16_t start_label_offset = AP_START_LABEL - (uint64_t)init_tramp;
 	JMP_START_PTR.seg = 0;

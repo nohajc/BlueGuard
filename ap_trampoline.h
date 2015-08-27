@@ -46,6 +46,7 @@ extern struct{
 } __attribute__((packed)) AP_IDTR;
 
 extern uint32_t AP_CR3;
+extern uint32_t AP_CR4;
 
 extern uint32_t ACTIVE_CPU_CNT;
 
