@@ -44,6 +44,10 @@ void str2wstr(CHAR16 * wstr, char * str, int n){
         *wstr_ptr++ = 0;
         ++i;
     }
+    if(i < n){
+	    *wstr_ptr++ = 0;
+	    *wstr_ptr = 0;
+	}
 }
 
 EFI_STATUS print_uint(uint64_t n){

@@ -90,8 +90,9 @@ typedef struct _EntryProcLocalAPIC{
 
 
 int init_smp(void);
-void ap_entry64(uint8_t cpu_number);
-void recv_msg(void);
+int start_smp(void);
+void ap_entry64(uint8_t cpu);
+void recv_msg(char * str);
 void send_msg(char * str);
 
 #endif

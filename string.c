@@ -2,7 +2,8 @@
 #include "string.h"
 
 int sprint_uintx(char * str, uint64_t n){
-    char num_str[256] = {0};
+    char num_str[256];
+    num_str[255] = 0;
 
     int i = 255, digit;
     if(n == 0){
@@ -22,13 +23,14 @@ int sprint_uintx(char * str, uint64_t n){
     }
     char * num = num_str + i;
     int len = strlen(num);
-    CopyMem(str, num, len);
+    CopyMem(str, num, len + 1);
 
     return len;
 }
 
 int sprint_uint(char * str, uint64_t n, int base){
     char num_str[256] = {0};
+    num_str[255] = 0;
 
     if(base == 16){
     	return sprint_uintx(str, n);
@@ -47,7 +49,7 @@ int sprint_uint(char * str, uint64_t n, int base){
     
     char * num = num_str + i;
     int len = strlen(num);
-    CopyMem(str, num, len);
+    CopyMem(str, num, len + 1);
 
     return len;
 }
@@ -91,7 +93,7 @@ int vsprintf(char * str, const char * format, va_list params){
 	int written = 0;
 	int amount;
 	bool rejected_bad_specifier = false;
-	int base = 0;
+	int base;
 
 	while(*format != 0){
 		if(*format != '%'){
@@ -120,6 +122,7 @@ int vsprintf(char * str, const char * format, va_list params){
 			goto print_c;
 		}
 
+		base = 0;
 		switch(*format){
 			case 'c': {
 				++format;

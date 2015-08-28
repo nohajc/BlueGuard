@@ -263,16 +263,32 @@ enum{
 #define VM_ENTRY_DEACT_DUAL_MONITOR     0x00000800
 #define VM_ENTRY_LOAD_IA32_EFER         0x00008000
 
+#define STATE_ACTIVE 0
+#define STATE_HLT 1
+#define STATE_SHUTDOWN 2
+#define STATE_WAIT_FOR_SIPI 3
+
+typedef struct{
+  uint64_t idt_limit;
+  uint64_t gdt_limit;
+  uint64_t idt_base;
+  uint64_t gdt_base;
+  uint64_t tss_base;
+  uint64_t tr_sel;
+  uint64_t host_cr3;
+} SharedTables;
+
 typedef struct{
   uint32_t magic;
   EFI_PHYSICAL_ADDRESS vmxon_region;
   EFI_PHYSICAL_ADDRESS vmcs;
-  EFI_PHYSICAL_ADDRESS io_bitmap_a;
-  EFI_PHYSICAL_ADDRESS io_bitmap_b;
-  EFI_PHYSICAL_ADDRESS msr_bitmap;
   EFI_PHYSICAL_ADDRESS host_stack;
   uint64_t guest_EFER;
+  SharedTables * st;
 } HVM;
+
+extern HVM * bsp_hvm;
+extern HVM * ap_hvm; // array of AP HVMs
 
 int vmx_supported(void);
 void vmx_get_revision_and_struct_size(uint32_t * rev, uint32_t * struct_size);

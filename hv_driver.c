@@ -10,6 +10,7 @@
 #include "hv_handlers.h"
 #include "reloc_pe.h"
 #include "smp.h"
+#include "string.h"
 
 
 CHAR16 magic[] = L"MAGIC_COMM_YOLO";
@@ -155,32 +156,14 @@ void vm_start(void){
   print(L"\r\n");
 }
 
-uint64_t inject_tss_descriptor(uint64_t * base, uint16_t * limit){
-  EFI_STATUS st;
+void setup_tss_descriptor(HVM * hvm){
   GDT_ENTRY * entry;
-  uint64_t new_gdt_base;
-  uint64_t tss_base;
+  SharedTables * st = hvm->st;
+  uint64_t tss_base = st->tss_base;
   uint32_t tss_limit = 103;
-  uint64_t idx = *limit + 1;
+  uint64_t idx = st->gdt_limit + 1;
 
-  st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &new_gdt_base);
-  if(st != EFI_SUCCESS){
-    return 0;
-  }
-
-  // Copy GDT
-  CopyMem((void*)new_gdt_base, (void*)*base, idx);
-  entry = (GDT_ENTRY*)(new_gdt_base + idx);
-
-  st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &tss_base);
-  if(st != EFI_SUCCESS){
-    return 0;
-  }
-
-  //print(L"tss_base: "); print_uint(tss_base); print(L"\r\n");
-
-  ZeroMem((void*)tss_base, 104);
-  *(uint64_t*)tss_base = get_rsp();
+  entry = (GDT_ENTRY*)(st->gdt_base + idx);
 
   entry->attr_0_7 = 0x8B; // 0b1000 - present, 0b1011 - 64-bit TSS (Busy)
   //entry->attr_0_7 = 0x89; // 0b1000 - present, 0b1001 - 64-bit TSS (Available)
@@ -195,10 +178,8 @@ uint64_t inject_tss_descriptor(uint64_t * base, uint16_t * limit){
 
   //set_gdt_base_limit(new_gdt_base, idx - 1 + 16);
   //set_tr(idx);
-  *base = new_gdt_base;
-  *limit += 16;
-
-  return tss_base;
+  st->gdt_limit += 16;
+  st->tr_sel = idx;
 }
 
 
@@ -305,58 +286,15 @@ uint64_t copy_page_tables(uint64_t pml4t){
 
 
 void vmcs_init(HVM * hvm){
-  uint64_t base, guest_base, cr0, cr3, cr4, sysenter_cs, sysenter_esp, sysenter_eip, debugctl, tr_base, tr_sel;
-  uint16_t limit;
-  uint64_t guest_idt_base, host_idt_base, guest_tr_base, host_cr3;
-  EFI_STATUS st;
-  //int i;
-  GDT_ENTRY * entry;
-
-  get_idt_base_limit(&base, &limit);
-
-  st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &guest_idt_base);
-  if(st != EFI_SUCCESS){
-    return;
-  }
-  st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &host_idt_base);
-  if(st != EFI_SUCCESS){
-    return;
-  }
-
-  CopyMem((void*)guest_idt_base, (void*)base, limit + 1);
-  CopyMem((void*)host_idt_base, (void*)base, limit + 1);
-
-  vmx_write(HOST_IDTR_BASE, host_idt_base);
-  vmx_write(GUEST_IDTR_BASE, guest_idt_base);
-  vmx_write(GUEST_IDTR_LIMIT, limit);
-
-  get_gdt_base_limit(&base, &limit);
-  print(L"GDTR base: "); print_uint(base); print(L" limit: "); print_uint(limit); print(L"\r\n");
-
-  tr_sel = limit + 1;
-  tr_base = inject_tss_descriptor(&base, &limit);
-  //get_gdt_base_limit(&base, &limit);
-
-  st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &guest_base);
-  if(st != EFI_SUCCESS){
-    return;
-  }
-
-  // Copy GDT
-  CopyMem((void*)guest_base, (void*)base, limit + 1);
-  //print(L"Copying "); print_uint(limit + 1); print(L" bytes of GDT\r\n");
-
-  st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &guest_tr_base);
-  if(st != EFI_SUCCESS){
-    return;
-  }
-
-  CopyMem((void*)guest_tr_base, (void*)tr_base, 104);
-  entry = (GDT_ENTRY*)(guest_base + tr_sel);
-  entry->base_0_15 = guest_tr_base & 0xFFFF;
-  entry->base_16_23 = (guest_tr_base >> 16) & 0xFF;
-  entry->base_24_31 = (guest_tr_base >> 24) & 0xFF;
-  *(uint32_t*)((uint64_t)entry + 8) = guest_tr_base >> 32;
+  uint64_t cr0, cr3, cr4, sysenter_cs, sysenter_esp, sysenter_eip, debugctl;
+  uint64_t base = (uint64_t)hvm->st->gdt_base;
+  uint64_t tr_sel = hvm->st->tr_sel;
+  uint64_t tss_base = (uint64_t)hvm->st->tss_base;
+  //EFI_STATUS st;
+  
+  vmx_write(HOST_IDTR_BASE, hvm->st->idt_base);
+  vmx_write(GUEST_IDTR_BASE, hvm->st->idt_base);
+  vmx_write(GUEST_IDTR_LIMIT, hvm->st->idt_limit);
 
   vmx_write(HOST_ES_SELECTOR, get_es() & 0xf8);
   vmx_write(HOST_CS_SELECTOR, get_cs() & 0xf8);
@@ -366,9 +304,9 @@ void vmcs_init(HVM * hvm){
   vmx_write(HOST_GS_SELECTOR, get_gs() & 0xf8);
   vmx_write(HOST_TR_SELECTOR, tr_sel & 0xf8);
 
-  vmx_write(HOST_GDTR_BASE, base);
-  vmx_write(GUEST_GDTR_BASE, guest_base);
-  vmx_write(GUEST_GDTR_LIMIT, limit);
+  vmx_write(HOST_GDTR_BASE, hvm->st->gdt_base);
+  vmx_write(GUEST_GDTR_BASE, hvm->st->gdt_base);
+  vmx_write(GUEST_GDTR_LIMIT, hvm->st->gdt_limit);
 
   vmx_write(GUEST_INTERRUPTIBILITY_INFO, 0);
   vmx_write(GUEST_ACTIVITY_STATE, 0);
@@ -384,12 +322,6 @@ void vmcs_init(HVM * hvm){
   vmx_write(CR3_TARGET_VALUE2, 0);      //no use
   vmx_write(CR3_TARGET_VALUE3, 0);      //no use
 
-  print(L"GDTR base: "); print_uint(base); print(L" limit: "); print_uint(limit); print(L"\r\n");
-  /*for(i = 0; i < 64; i += 8){
-    print_uint(*(uint64_t*)(base + i)); print(L"\r\n");
-  }
-  print(L"\r\n");*/
-
   /*print(L"ES_SELECTOR: "); print_uintx(get_es()); print(L"\r\n");
   print(L"CS_SELECTOR: "); print_uintx(get_cs()); print(L"\r\n");
   print(L"SS_SELECTOR: "); print_uintx(get_ss()); print(L"\r\n");
@@ -398,32 +330,24 @@ void vmcs_init(HVM * hvm){
   print(L"GS_SELECTOR: "); print_uintx(get_gs()); print(L"\r\n");
   print(L"TR_SELECTOR: "); print_uintx(tr_sel); print(L"\r\n");*/
 
-  set_guest_selector(guest_base, ES, get_es());
-  set_guest_selector(guest_base, CS, get_cs());
-  set_guest_selector(guest_base, SS, get_ss());
-  set_guest_selector(guest_base, DS, get_ds());
-  set_guest_selector(guest_base, FS, get_fs());
-  set_guest_selector(guest_base, GS, get_gs());
-  set_guest_selector(guest_base, LDTR, get_ldtr());
-  set_guest_selector(guest_base, TR, tr_sel);
+  set_guest_selector(base, ES, get_es());
+  set_guest_selector(base, CS, get_cs());
+  set_guest_selector(base, SS, get_ss());
+  set_guest_selector(base, DS, get_ds());
+  set_guest_selector(base, FS, get_fs());
+  set_guest_selector(base, GS, get_gs());
+  set_guest_selector(base, LDTR, get_ldtr());
+  set_guest_selector(base, TR, tr_sel);
 
 
   cr0 = get_cr0();
   cr3 = get_cr3();
   cr4 = get_cr4();
 
-  // !! WE NEED TO COPY ALL PAGE TABLES TO EfiRuntimeServicesData MEMORY
-  // !! THE FIRMWARE HAS NO USE FOR THE IDENTITY MAPPING AFTER SetVirtualAddressMap() CALL
-  // !! SO THE BOOTING OS WILL MOST LIKELY OVERWRITE THE ORIGINAL TABLES CAUSING PAGE FAULT ON VMEXIT
-  host_cr3 = copy_page_tables(cr3 & ~0xFFF);
-  if(!host_cr3){
-    print(L"COPY PAGE TABLES ERROR!\r\n");
-  }
-  host_cr3 |= cr3 & 0xFFF;
-  
+    
   vmx_write(HOST_CR0, cr0);
   vmx_write(GUEST_CR0, cr0);
-  vmx_write(HOST_CR3, host_cr3);
+  vmx_write(HOST_CR3, hvm->st->host_cr3);
   vmx_write(GUEST_CR3, cr3);
   vmx_write(HOST_CR4, cr4);
   vmx_write(GUEST_CR4, cr4);
@@ -459,23 +383,11 @@ void vmcs_init(HVM * hvm){
 
   //entry = (GDT_ENTRY*)((uint64_t)base + (get_tr() & ~0x7));
   //tr_base = entry->base_0_15 | entry->base_16_23 << 16 | entry->base_24_31 << 24;
-  vmx_write(HOST_TR_BASE, tr_base);
+  vmx_write(HOST_TR_BASE, tss_base);
 
   /*print(L"HOST_FS_BASE: "); print_uint(get_msr(MSR_FS_BASE)); print(L"\r\n");
   print(L"HOST_GS_BASE: "); print_uint(get_msr(MSR_GS_BASE)); print(L"\r\n");
   print(L"HOST_TR_BASE: "); print_uint(tr_base); print(L"\r\n");*/
-
-  /*
-  GUEST_RSP
-  GUEST_RIP
-
-  //vmx_write (HOST_GDTR_BASE, (ULONG64) Cpu->GdtArea);
-  //vmx_write (HOST_IDTR_BASE, (ULONG64) Cpu->IdtArea);
-
-  HOST_RSP
-  HOST_RIP
-
-  */
 
   // Put pointer to the HVM structure onto the host stack
   // It will end up as the last element of GUEST_REGS structure
@@ -485,17 +397,17 @@ void vmcs_init(HVM * hvm){
   //vmx_write(HOST_EIP, (uint64_t)ptr_vmx_exit);
   vmx_write(HOST_EIP, (uint64_t)vmx_exit);
 
-  vmx_write(IO_BITMAP_A, hvm->io_bitmap_a & 0xFFFFFFFF);
+  /*vmx_write(IO_BITMAP_A, hvm->io_bitmap_a & 0xFFFFFFFF);
   vmx_write(IO_BITMAP_A_HIGH, hvm->io_bitmap_a >> 32);
 
   vmx_write(IO_BITMAP_B, hvm->io_bitmap_b & 0xFFFFFFFF);
   vmx_write(IO_BITMAP_B_HIGH, hvm->io_bitmap_b >> 32);
 
   vmx_write(MSR_BITMAP, hvm->msr_bitmap & 0xFFFFFFFF);
-  vmx_write(MSR_BITMAP_HIGH, hvm->msr_bitmap >> 32);
+  vmx_write(MSR_BITMAP_HIGH, hvm->msr_bitmap >> 32);*/
 
-  vmx_write(TSC_OFFSET, 0);
-  vmx_write(TSC_OFFSET_HIGH, 0);
+  /*vmx_write(TSC_OFFSET, 0);
+  vmx_write(TSC_OFFSET_HIGH, 0);*/
 
   //disable Vmexit by Extern-interrupt,NMI and Virtual NMI
   vmx_write(PIN_BASED_VM_EXEC_CONTROL, init_control_field(0, MSR_IA32_VMX_PINBASED_CTLS));
@@ -587,15 +499,63 @@ int migrate_image(EFI_LOADED_IMAGE * loaded_image){
   return 1;
 }
 
+int prepare_shared_hvm_tables(HVM * hvm){
+  EFI_STATUS err;
+  uint64_t base;
+  uint16_t limit;
+  uint64_t cr3 = get_cr3();
+  SharedTables * st = hvm->st;
+  
+  // Copy IDT
+  get_idt_base_limit(&base, &limit);
+
+  err = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 3, &st->idt_base);
+  if(err != EFI_SUCCESS){
+    return 0;
+  }
+
+  CopyMem((void*)st->idt_base, (void*)base, limit + 1);
+  //print(L"IDT LIMIT: "); print_uint(limit); print(L"\r\n");
+  st->idt_limit = limit;
+
+  // Copy GDT  
+  get_gdt_base_limit(&base, &limit);
+
+  st->gdt_base = st->idt_base + 4096;
+  CopyMem((void*)st->gdt_base, (void*)base, limit + 1);
+  st->gdt_limit = limit;
+
+  // Create TSS
+  st->tss_base = st->gdt_base + 4096;
+  ZeroMem((void*)st->tss_base, 104);
+  // *(uint64_t*)st->tss_base = get_rsp();
+
+  st->tr_sel = limit + 1;
+  setup_tss_descriptor(hvm);
+
+  // !! WE NEED TO COPY ALL PAGE TABLES TO EfiRuntimeServicesData MEMORY
+  // !! THE FIRMWARE HAS NO USE FOR THE IDENTITY MAPPING AFTER SetVirtualAddressMap() CALL
+  // !! SO THE BOOTING OS WILL MOST LIKELY OVERWRITE THE ORIGINAL TABLES CAUSING PAGE FAULT ON VMEXIT
+  st->host_cr3 = copy_page_tables(cr3 & ~0xFFF);
+  if(!st->host_cr3){
+    print(L"COPY PAGE TABLES ERROR!\r\n");
+  }
+  st->host_cr3 |= cr3 & 0xFFF;
+
+  return 1;
+}
+
+HVM * bsp_hvm;
+HVM * ap_hvm;
+
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
 {
     uint32_t vmx_rev, struct_size;
-    HVM * hvm;
     EFI_STATUS st = EFI_SUCCESS;
     EFI_LOADED_IMAGE * loaded_image;
+    int i;
 
     init(image, sys_table);
-
     init_smp();
 
     /*GetVariableOrig = RT->GetVariable;
@@ -608,6 +568,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     }
     else{
         print(L"Error: VMX is not supported.\r\n");
+        goto epilog;
     }
 
     vmx_get_revision_and_struct_size(&vmx_rev, &struct_size);
@@ -619,30 +580,64 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     print_uint(struct_size);
     print(L"\r\n");
 
+    // Prepare runtime memory for HVM
+    st = BS->AllocatePool(EfiRuntimeServicesData, sizeof(HVM), (void**)&bsp_hvm);
+    if(st != EFI_SUCCESS){
+      goto epilog;
+    }
+
+    bsp_hvm->magic = 0xBEAF1BAF;
+    bsp_hvm->st = (SharedTables*)((uint64_t)bsp_hvm + sizeof(HVM));
+    //printf("HVM + ST size: %u\r\n", sizeof(HVM)+sizeof(SharedTables));
+
+    st = BS->AllocatePool(EfiRuntimeServicesData, CPU_count * sizeof(HVM), (void**)&ap_hvm);
+    if(st != EFI_SUCCESS){
+      print(L"ap_hvm allocation error\r\n");
+      goto epilog;
+    }
     
-    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, (EFI_PHYSICAL_ADDRESS*)&hvm);
+    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, CPU_count, &bsp_hvm->vmxon_region);
+    if(st != EFI_SUCCESS){
+      print(L"vmcs allocation error\r\n");
+      goto epilog;
+    }
+
+    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, CPU_count, &bsp_hvm->vmcs);
     if(st != EFI_SUCCESS){
       goto epilog;
     }
 
-    hvm->magic = 0xBEAF1BAF;
-
-    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 2, &hvm->vmxon_region);
+    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 16 * CPU_count, &bsp_hvm->host_stack);
     if(st != EFI_SUCCESS){
+      print(L"host stack allocation error\r\n");
       goto epilog;
     }
+
+    for(i = 1; i < CPU_count; ++i){
+      ap_hvm[i].st = bsp_hvm->st;
+      ap_hvm[i].vmxon_region = (uint64_t)bsp_hvm->vmxon_region + i * 4096;
+      ap_hvm[i].vmcs = (uint64_t)bsp_hvm->vmcs + i * 4096;
+      ap_hvm[i].host_stack = (uint64_t)bsp_hvm->host_stack + i * 65536;
+    }
+
+    if(!prepare_shared_hvm_tables(bsp_hvm)){
+      print(L"Error preparing shared hvm tables.\r\n");
+    }
+
+    // Start the rest of CPUs
+    start_smp();
 
     print(L"Allocated VMXON-region at ");
-    print_uint((uint64_t)hvm->vmxon_region);
+    print_uint((uint64_t)bsp_hvm->vmxon_region);
     print(L"\r\n");
 
     // Write revision ID at the start of VMXON-region
-    *(uint32_t*)hvm->vmxon_region = vmx_rev;
+    *(uint32_t*)bsp_hvm->vmxon_region = vmx_rev;
 
     vmx_enable(); // Set bit 13 of CR4 to 1 to enable the VMX operations
     //vmx_disable_a20_line();
 
-    if(vmx_switch_to_root_op((void*)hvm->vmxon_region)){
+    if(vmx_switch_to_root_op((void*)bsp_hvm->vmxon_region)){
       print(L"Switched to VMX-root-operation mode!\r\n");
     }
     else{
@@ -650,13 +645,8 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
       goto epilog;
     }
 
-    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &hvm->vmcs);
-    if(st != EFI_SUCCESS){
-      goto epilog;
-    }
-
-    *(uint32_t*)hvm->vmcs = vmx_rev;
-    if(vmx_vmcs_activate((void*)hvm->vmcs)){
+    *(uint32_t*)bsp_hvm->vmcs = vmx_rev;
+    if(vmx_vmcs_activate((void*)bsp_hvm->vmcs)){
       print(L"Activated VMCS!\r\n");
     }
     else{
@@ -664,29 +654,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
       goto epilog;
     }
 
-    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &hvm->io_bitmap_a);
-    if(st != EFI_SUCCESS){
-      goto epilog;
-    }
-    ZeroMem((void*)hvm->io_bitmap_a, 4096);
-
-    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &hvm->io_bitmap_b);
-    if(st != EFI_SUCCESS){
-      goto epilog;
-    }
-    ZeroMem((void*)hvm->io_bitmap_b, 4096);
-
-    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &hvm->msr_bitmap);
-    if(st != EFI_SUCCESS){
-      goto epilog;
-    }
-    ZeroMem((void*)hvm->msr_bitmap, 4096);
-
-    st = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 24, &hvm->host_stack);
-    if(st != EFI_SUCCESS){
-      goto epilog;
-    }
-
+    
     st = BS->OpenProtocol(image, &LoadedImageProtocol, (VOID **)&loaded_image,
                                 image, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
     if(EFI_ERROR(st)){
@@ -697,7 +665,8 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     migrate_image(loaded_image);
 
     //print(L"HOST_CR3: "); print_uintx(get_cr3()); print(L"\r\n");
-    vmcs_init(hvm);
+
+    vmcs_init(bsp_hvm);
     //print(L"GUEST_CR3: "); print_uintx(vmx_read(GUEST_CR3)); print(L"\r\n");
     vm_start();
     print(L"Hello from the Guest VM!\r\n");

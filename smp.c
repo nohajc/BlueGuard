@@ -168,10 +168,7 @@ int activate_APs(uint64_t tramp_addr){
 
 int init_smp(void){
 	EFI_CONFIGURATION_TABLE * CT = ST->ConfigurationTable;
-	EFI_PHYSICAL_ADDRESS ap_init_code = 0xFFFF;
-	EFI_STATUS st;
-	int i, j;
-	uint64_t apic_base_msr = get_msr(MSR_IA32_APIC_BASE);
+	int i;
 	int acpi1_idx = -1;
 	int acpi2_idx = -1;
 
@@ -193,6 +190,14 @@ int init_smp(void){
 		print(L"Found ACPI 1 GUID\r\n");
 		// ACPI 1 Support not implemented
 	}
+
+	return 1;
+}
+
+int start_smp(void){
+	EFI_PHYSICAL_ADDRESS ap_init_code = 0xFFFF;
+	EFI_STATUS st;
+	uint64_t apic_base_msr = get_msr(MSR_IA32_APIC_BASE);
 
 	if(!(apic_base_msr & APIC_ENABLED)){
 		// TODO enable APIC manually
@@ -247,9 +252,15 @@ int init_smp(void){
 	*CPUs_activated = 1;
 	activate_APs((uint64_t)ap_init_code);
 
-	for(i = 1; i < CPU_count; ++i){
-		for(j = 0; j < 4; ++j){
-			recv_msg();
+	char str[128];
+	int msg_sources = CPU_count - 1;
+	while(msg_sources){
+		recv_msg(str);
+		if(!strcmp(str, "MSG_END")){
+			--msg_sources;
+		}
+		else{
+			printf("%s", str);
 		}
 	}
 
@@ -257,16 +268,15 @@ int init_smp(void){
 	return 1;
 }
 
-
 lock_t wait_for_send = 1;
 lock_t wait_for_recv = 0;
 
 char msg_buffer[128];
 
-void recv_msg(void){
+void recv_msg(char * str){
 	acquire_lock(&wait_for_send);
 	
-	printf("%s", msg_buffer);
+	CopyMem(str, msg_buffer, strlen(msg_buffer) + 1);
 
 	release_lock(&wait_for_recv);
 }
@@ -274,7 +284,7 @@ void recv_msg(void){
 void send_msg(char * str){
 	acquire_lock(&wait_for_recv);
 
-	CopyMem(msg_buffer, str, strlen(str));
+	CopyMem(msg_buffer, str, strlen(str) + 1);
 
 	release_lock(&wait_for_send);
 }
@@ -292,16 +302,49 @@ int bsp_printf(const char * format, ...){
 	return ret;
 }
 
-void ap_entry64(uint8_t cpu_number){
-	int i;
-	//CHAR16 str[] = L"HELLO, I'M AP 0!\r\n";
-	//((char*)str)[28] = cpu_number + '0';
-	//char str[64];
-	//sprintf(str, "HELLO, I'M AP %u!\r\n", cpu_number);
+void ap_entry64(uint8_t cpu){
+	uint32_t vmx_rev, struct_size;
 
-	for(i = 0; i < 4; ++i){
-		//send_msg(str);
-		bsp_printf("HELLO, I'M AP %u!\r\n", cpu_number);
-	}
+	/*bsp_printf("%u: VMXON-region = %x\r\n", cpu, ap_hvm[cpu].vmxon_region);
+	bsp_printf("%u: VMCS = %x\r\n", cpu, ap_hvm[cpu].vmcs);
+	bsp_printf("%u: Host stack = %x\r\n", cpu, ap_hvm[cpu].host_stack);
+	bsp_printf("%u: GDT base = %x\r\n", cpu, ap_hvm[cpu].st->gdt_base);*/
+
+	if(vmx_supported()){
+        bsp_printf("%u: VMX is supported!\r\n", cpu);
+    }
+    else{
+        bsp_printf("%u: Error: VMX is not supported.\r\n", cpu);
+        goto msg_end;
+    }
+
+    vmx_get_revision_and_struct_size(&vmx_rev, &struct_size);
+
+    bsp_printf("%u: VMX revision: %u\r\n", cpu, vmx_rev);
+    bsp_printf("%u: Struct size: %u\r\n", cpu, struct_size);
+
+    // Write revision ID at the start of VMXON-region
+    *(uint32_t*)ap_hvm[cpu].vmxon_region = vmx_rev;
+    vmx_enable(); // Set bit 13 of CR4 to 1 to enable the VMX operations
+
+    if(vmx_switch_to_root_op((void*)ap_hvm[cpu].vmxon_region)){
+      bsp_printf("%u: Switched to VMX-root-operation mode!\r\n", cpu);
+    }
+    else{
+      bsp_printf("%u: Error switching to VMX-root-operation mode.\r\n", cpu);
+      goto msg_end;
+    }
+
+    *(uint32_t*)ap_hvm[cpu].vmcs = vmx_rev;
+    if(vmx_vmcs_activate((void*)ap_hvm[cpu].vmcs)){
+      bsp_printf("%u: Activated VMCS!\r\n", cpu);
+    }
+    else{
+      bsp_printf("%u: Error activating VMCS.\r\n", cpu);
+      goto msg_end;
+    }
+	
+	msg_end:
+	send_msg("MSG_END");
 	//while(1);
 }
