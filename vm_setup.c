@@ -4,6 +4,7 @@
 #include "lib_uefi.h"
 #include "vm_setup.h"
 #include "regs.h"
+#include "string.h"
 
 
 void set_guest_selector(uint64_t gdt_base, uint32_t reg, uint64_t sel){
@@ -13,7 +14,7 @@ void set_guest_selector(uint64_t gdt_base, uint32_t reg, uint64_t sel){
   GDT_ENTRY * entry;
 
   entry = (GDT_ENTRY*)((uint64_t)gdt_base + (sel & ~0x7));
-  base = entry->base_0_15 | entry->base_16_23 << 16 | entry->base_24_31 << 24;
+  base = (entry->base_0_15 | entry->base_16_23 << 16 | entry->base_24_31 << 24) & 0xFFFFFFFF;
 
   /*if(reg == TR){
     print(L"DEBUG TR_SEL "); print_uintx(sel & ~0x7); print(L"\r\n");
@@ -83,6 +84,61 @@ void vm_start(void){
   print(L"\r\n");
 }
 
+/*void check_guest_state(void){
+  uint32_t cr0_fixed0 = (uint32_t)get_msr(MSR_IA32_VMX_CR0_FIXED0);
+  uint32_t cr0_fixed1 = (uint32_t)get_msr(MSR_IA32_VMX_CR0_FIXED1);
+
+  uint32_t set_cr0 = cr0_fixed0 & cr0_fixed1;
+  uint32_t zap_cr0 = cr0_fixed0 | cr0_fixed1;
+  uint32_t guest_cr0 = vmx_read(GUEST_CR0);
+  if(!((guest_cr0 & set_cr0) == set_cr0)){
+    printf("Error CR0_FIXED1\r\n");
+    return;
+  }
+  if(guest_cr0 & ~zap_cr0){
+    printf("Error CR0_FIXED0\r\n");
+    return;
+  }
+
+  uint32_t cr4_fixed0 = (uint32_t)get_msr(MSR_IA32_VMX_CR4_FIXED0);
+  uint32_t cr4_fixed1 = (uint32_t)get_msr(MSR_IA32_VMX_CR4_FIXED1);
+
+  uint32_t set_cr4 = cr4_fixed0 & cr4_fixed1;
+  uint32_t zap_cr4 = cr4_fixed0 | cr4_fixed1;
+  uint32_t guest_cr4 = vmx_read(GUEST_CR4);
+  if(!((guest_cr4 & set_cr4) == set_cr4)){
+    printf("Error CR4_FIXED1\r\n");
+    return;
+  }
+  if(guest_cr4 & ~zap_cr4){
+    printf("Error CR4_FIXED0\r\n");
+    return;
+  }
+
+  uint64_t debugctl = get_msr(MSR_IA32_DEBUGCTL);
+  if(debugctl & 0xfffffe3c){
+    printf("Error DEBUGCTL MSR\r\n");
+    return;
+  }
+
+  uint64_t vmentry_ctls = vmx_read(VM_ENTRY_CONTROLS);
+  if(vmentry_ctls & VM_ENTRY_IA32E_MODE){
+    if(!(guest_cr0 & 0x80000000) || !(guest_cr4 & 0x20)){
+      printf("Error CR0.PG, CR4.PAE\r\n");
+      return;
+    }
+  }
+
+  uint64_t guest_cr3 = vmx_read(GUEST_CR3);
+  if(guest_cr3 & ~0xFFFFFFFF){
+    printf("Error CR3 address\r\n");
+    return;
+  }
+
+  //printf("VM_ENTRY_CONTROLS: %b\r\n", vmentry_ctls);
+  printf("FOO\r\n");
+}*/
+
 void vmcs_init(HVM * hvm){
   uint64_t cr0, cr3, cr4, sysenter_cs, sysenter_esp, sysenter_eip, debugctl;
   uint64_t base = (uint64_t)hvm->st->gdt_base;
@@ -108,6 +164,7 @@ void vmcs_init(HVM * hvm){
 
   vmx_write(GUEST_INTERRUPTIBILITY_INFO, 0);
   vmx_write(GUEST_ACTIVITY_STATE, STATE_ACTIVE);
+  vmx_write(GUEST_PENDING_DBG_EXCEPTIONS, 0);
 
   vmx_write(CR0_GUEST_HOST_MASK, X86_CR0_PG);
   vmx_write(CR4_GUEST_HOST_MASK, X86_CR4_VMXE); //disable vmexit 0f mov to cr4 except for X86_CR4_VMXE
@@ -142,6 +199,8 @@ void vmcs_init(HVM * hvm){
   cr3 = get_cr3();
   cr4 = get_cr4();
 
+  //printf("Original CR3: %x\r\n", cr3);
+
     
   vmx_write(HOST_CR0, cr0);
   vmx_write(GUEST_CR0, cr0);
@@ -168,6 +227,9 @@ void vmcs_init(HVM * hvm){
   vmx_write(HOST_IA32_SYSENTER_EIP, sysenter_eip);
 
   //print(L"SYSENTER_EIP: "); print_uint(sysenter_eip); print(L"\r\n");
+
+  /*printf("IDTR Base: %x, Limit: %x\r\n", vmx_read(GUEST_IDTR_BASE), vmx_read(GUEST_IDTR_LIMIT));
+  printf("GDTR Base: %x, Limit: %x\r\n", vmx_read(GUEST_GDTR_BASE), vmx_read(GUEST_GDTR_LIMIT));*/
 
   vmx_write(VMCS_LINK_POINTER, 0xFFFFFFFF);
   vmx_write(VMCS_LINK_POINTER_HIGH, 0xFFFFFFFF);
@@ -228,16 +290,16 @@ void vmcs_init(HVM * hvm){
 
   hvm->guest_EFER = get_msr(MSR_EFER);
 
-  //print(L"DEBUG:\r\n");
-  //print(L"CR0: "); print_uintb(get_cr0()); print(L"\r\n");
-  //print(L"CR0 FIXED0: "); print_uintb(get_msr(MSR_IA32_VMX_CR0_FIXED0)); print(L"\r\n");
-  //print(L"CR0 FIXED1: "); print_uintb(get_msr(MSR_IA32_VMX_CR0_FIXED1)); print(L"\r\n\n");
+  /*print(L"DEBUG:\r\n");
+  print(L"CR0: "); print_uintb(get_cr0()); print(L"\r\n");
+  print(L"CR0 FIXED0: "); print_uintb(get_msr(MSR_IA32_VMX_CR0_FIXED0)); print(L"\r\n");
+  print(L"CR0 FIXED1: "); print_uintb(get_msr(MSR_IA32_VMX_CR0_FIXED1)); print(L"\r\n\n");
 
-  //print(L"CR3: "); print_uintb(get_cr3()); print(L"\r\n");
-  //print(L"CR4: "); print_uintb(get_cr4()); print(L"\r\n");
-  //print(L"CR4 FIXED0: "); print_uintb(get_msr(MSR_IA32_VMX_CR4_FIXED0)); print(L"\r\n");
-  //print(L"CR4 FIXED1: "); print_uintb(get_msr(MSR_IA32_VMX_CR4_FIXED1)); print(L"\r\n\n");
-  /*print(L"Guest TR Selector: "); print_uintx(vmx_read(GUEST_TR_SELECTOR)); print(L"\r\n");
+  print(L"CR3: "); print_uintb(get_cr3()); print(L"\r\n");
+  print(L"CR4: "); print_uintb(get_cr4()); print(L"\r\n");
+  print(L"CR4 FIXED0: "); print_uintb(get_msr(MSR_IA32_VMX_CR4_FIXED0)); print(L"\r\n");
+  print(L"CR4 FIXED1: "); print_uintb(get_msr(MSR_IA32_VMX_CR4_FIXED1)); print(L"\r\n\n");
+  print(L"Guest TR Selector: "); print_uintx(vmx_read(GUEST_TR_SELECTOR)); print(L"\r\n");
   print(L"Guest LDTR Selector: "); print_uintx(vmx_read(GUEST_LDTR_SELECTOR)); print(L"\r\n");
   print(L"Guest TR Base: "); print_uintx(vmx_read(GUEST_TR_BASE)); print(L"\r\n");
   print(L"Guest FS Base: "); print_uintx(vmx_read(GUEST_FS_BASE)); print(L"\r\n");
@@ -245,9 +307,9 @@ void vmcs_init(HVM * hvm){
   print(L"Guest CS Base: "); print_uintx(vmx_read(GUEST_CS_BASE)); print(L"\r\n");
   print(L"Guest SS Base: "); print_uintx(vmx_read(GUEST_SS_BASE)); print(L"\r\n");
   print(L"Guest DS Base: "); print_uintx(vmx_read(GUEST_DS_BASE)); print(L"\r\n");
-  print(L"Guest ES Base: "); print_uintx(vmx_read(GUEST_ES_BASE)); print(L"\r\n");*/
+  print(L"Guest ES Base: "); print_uintx(vmx_read(GUEST_ES_BASE)); print(L"\r\n");
 
-  /*print(L"Guest TR AR bytes: "); print_uintx(vmx_read(GUEST_TR_AR_BYTES)); print(L"\r\n");
+  print(L"Guest TR AR bytes: "); print_uintx(vmx_read(GUEST_TR_AR_BYTES)); print(L"\r\n");
   print(L"Guest LDTR AR bytes: "); print_uintx(vmx_read(GUEST_LDTR_AR_BYTES)); print(L"\r\n");
   print(L"Guest CS AR bytes: "); print_uintx(vmx_read(GUEST_CS_AR_BYTES)); print(L"\r\n");
   print(L"Guest SS AR bytes: "); print_uintx(vmx_read(GUEST_SS_AR_BYTES)); print(L"\r\n");

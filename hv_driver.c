@@ -250,7 +250,9 @@ int prepare_shared_hvm_tables(HVM * hvm){
   // Copy IDT
   get_idt_base_limit(&base, &limit);
 
-  err = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 3, &st->idt_base);
+  st->idt_base = 0xFFFFFFFF;
+
+  err = BS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, 3, &st->idt_base);
   if(err != EFI_SUCCESS){
     return 0;
   }
@@ -266,13 +268,19 @@ int prepare_shared_hvm_tables(HVM * hvm){
   CopyMem((void*)st->gdt_base, (void*)base, limit + 1);
   st->gdt_limit = limit;
 
-  // Create TSS
-  st->tss_base = st->gdt_base + 4096;
-  ZeroMem((void*)st->tss_base, 104);
-  // *(uint64_t*)st->tss_base = get_rsp();
+  st->tr_sel = get_tr();
+  if(st->tr_sel != 0){
+    print(L"We have TSS already!\r\n");
+  }
+  else{
+    // Create TSS
+    st->tss_base = st->gdt_base + 4096;
+    ZeroMem((void*)st->tss_base, 104);
+    *(uint64_t*)st->tss_base = get_rsp();
 
-  st->tr_sel = limit + 1;
-  setup_tss_descriptor(hvm);
+    st->tr_sel = limit + 1;
+    setup_tss_descriptor(hvm);
+  }
 
   // !! WE NEED TO COPY ALL PAGE TABLES TO EfiRuntimeServicesData MEMORY
   // !! THE FIRMWARE HAS NO USE FOR THE IDENTITY MAPPING AFTER SetVirtualAddressMap() CALL
@@ -282,6 +290,12 @@ int prepare_shared_hvm_tables(HVM * hvm){
     print(L"COPY PAGE TABLES ERROR!\r\n");
   }
   st->host_cr3 |= cr3 & 0xFFF;
+
+  err = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 3, &st->debug_area);
+  if(err != EFI_SUCCESS){
+    return 0;
+  }
+  //printf("Debug area: %x\r\n", st->debug_area);
 
   return 1;
 }
@@ -396,19 +410,23 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     }
 
     
-    st = BS->OpenProtocol(image, &LoadedImageProtocol, (VOID **)&loaded_image,
+    /*st = BS->OpenProtocol(image, &LoadedImageProtocol, (VOID **)&loaded_image,
                                 image, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
     if(EFI_ERROR(st)){
       print(L"Error getting a LoadedImageProtocol handle.\r\n");
       goto epilog;
-    }
+    }*/
 
-    migrate_image(loaded_image);
+    //migrate_image(loaded_image);
 
     //print(L"HOST_CR3: "); print_uintx(get_cr3()); print(L"\r\n");
 
+    // TEST SIPI TRAP
+    //start_smp();
+
     vmcs_init(bsp_hvm);
     //print(L"GUEST_CR3: "); print_uintx(vmx_read(GUEST_CR3)); print(L"\r\n");
+    print(L"Starting VM...\r\n");
     vm_start();
     print(L"Hello from the Guest VM!\r\n");
     //print(L"GUEST_CR3: "); print_uintx(get_cr3()); print(L"\r\n");

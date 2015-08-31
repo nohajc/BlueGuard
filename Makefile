@@ -71,6 +71,10 @@ install:
 	cp *.efi $(EFI_PATH)
 	/opt/vmware/bin/vmware-mount -k $(VM_IMG)
 
+umount:
+	/opt/vmware/bin/vmware-mount -k $(VM_IMG)
+
+
 clean:
 	-rm *.o
 	-rm bootx64.efi

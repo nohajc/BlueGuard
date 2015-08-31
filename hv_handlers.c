@@ -3,6 +3,7 @@
 #include "vmx_emu.h"
 #include "regs.h"
 #include "hv_handlers.h"
+#include "string.h"
 
 CHAR16 *reg_str[] = 
 {
@@ -190,11 +191,24 @@ void unknown_exit(uint64_t exit_reason){
 }
 
 void handle_failed_vmentry(uint64_t exit_reason){
-  //print(L"Failed vmentry.\r\n");
+  print(L"Failed vmentry.\r\n");
+  printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
+  printf("Exit qualification: %u\r\n", vmx_read(EXIT_QUALIFICATION));
 }
 
 void handle_vmcall(GUEST_REGS * regs){
   regs->rax = 0x47415753; // "SWAG"
+}
+
+void handle_sipi(GUEST_REGS * regs){
+  uint64_t exit_qualification = vmx_read(EXIT_QUALIFICATION);
+  uint64_t addr = exit_qualification << 12;
+  //CopyMem((void*)regs->hvm->st->debug_area, &addr, 8);
+  //print_uintx(addr);
+  //vmx_write(GUEST_EIP, addr);
+  hlt_ap:
+  vmx_write(GUEST_ACTIVITY_STATE, STATE_HLT);
+  //vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
 }
 
 void vmexit_handler(GUEST_REGS * regs){
@@ -226,6 +240,9 @@ void vmexit_handler(GUEST_REGS * regs){
     case EXIT_REASON_VMCALL:
       handle_vmcall(regs);
       break;
+    case EXIT_REASON_SIPI:
+      handle_sipi(regs);
+      return;
     default:;
       unknown_exit(exit_reason & 0xFFFF);
   }

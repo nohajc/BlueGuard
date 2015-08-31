@@ -7,6 +7,7 @@
 #include "ap_trampoline.h"
 #include "spinlock.h"
 #include "string.h"
+#include "vm_setup.h"
 
 int CPU_count = 0;
 volatile int * CPUs_activated;
@@ -236,7 +237,7 @@ int start_smp(void){
 	JMP_64_PTR.seg = get_cs();
 	JMP_64_PTR.addr = (uint64_t)ap_tramp64;
 	
-	print(L"JMP_64_PTR: "); print_uintx(JMP_64_PTR.addr); print(L"\r\n");
+	//print(L"JMP_64_PTR: "); print_uintx(JMP_64_PTR.addr); print(L"\r\n");
 
 	BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, CPU_count, (EFI_PHYSICAL_ADDRESS*)&ap_stacks);
 
@@ -304,6 +305,8 @@ int bsp_printf(const char * format, ...){
 
 void ap_entry64(uint8_t cpu){
 	uint32_t vmx_rev, struct_size;
+	uint64_t apic_base_msr = get_msr(MSR_IA32_APIC_BASE);
+	bsp_printf("%u: MSR_IA32_APIC_BASE: %x\r\n", cpu, apic_base_msr);
 
 	/*bsp_printf("%u: VMXON-region = %x\r\n", cpu, ap_hvm[cpu].vmxon_region);
 	bsp_printf("%u: VMCS = %x\r\n", cpu, ap_hvm[cpu].vmcs);
@@ -343,8 +346,14 @@ void ap_entry64(uint8_t cpu){
       bsp_printf("%u: Error activating VMCS.\r\n", cpu);
       goto msg_end;
     }
+
+    bsp_printf("%u: Debug area: %x\r\n", cpu, ap_hvm[cpu].st->debug_area);
+
+    vmcs_init(&ap_hvm[cpu]);
+    vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
 	
 	msg_end:
 	send_msg("MSG_END");
-	//while(1);
+
+	vm_start();
 }
