@@ -357,7 +357,11 @@ void ap_entry64(uint8_t cpu){
     bsp_printf("%u: Debug area: %x\r\n", cpu, ap_hvm[cpu].st->debug_area);
 
     vmcs_init(&ap_hvm[cpu]);
-    vmx_write(GUEST_ES_SELECTOR, 0);
+    ap_hvm[cpu].guest_CR0 &= ~X86_CR0_PE;
+    ap_hvm[cpu].guest_CR4 &= ~X86_CR4_PAE;
+    ap_hvm[cpu].guest_realmode = true;
+    ap_hvm[cpu].guest_realsegment = true;
+    /*vmx_write(GUEST_ES_SELECTOR, 0);
 	vmx_write(GUEST_CS_SELECTOR, 0);
 	vmx_write(GUEST_SS_SELECTOR, 0);
 	vmx_write(GUEST_DS_SELECTOR, 0);
@@ -382,13 +386,13 @@ void ap_entry64(uint8_t cpu){
 	vmx_write(GUEST_FS_AR_BYTES, 0xF3);
 	vmx_write(GUEST_GS_AR_BYTES, 0xF3);
 	vmx_write(GUEST_EFLAGS, EFLAGS_IOPL3 | EFLAGS_VM);
-	vmx_write(VM_ENTRY_CONTROLS, init_control_field(0, MSR_IA32_VMX_ENTRY_CTLS));
+	vmx_write(VM_ENTRY_CONTROLS, init_control_field(0, MSR_IA32_VMX_ENTRY_CTLS));*/
 
     vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
 
     send_msg("MSG_END");
-	//vm_start();
-	uint64_t error_code;
+    vm_start();
+	/*uint64_t error_code;
 
 	vmx_write(GUEST_ESP, 0xFFFF);
 	vmx_write(GUEST_EIP, 0xF000);
@@ -396,7 +400,7 @@ void ap_entry64(uint8_t cpu){
 	vmx_launch();
 
 	error_code = vmx_read(VM_INSTRUCTION_ERROR);
-	bsp_printf("VMLAUNCH failed.\r\nError code: %u\r\n", error_code);
+	bsp_printf("VMLAUNCH failed.\r\nError code: %u\r\n", error_code);*/
 
 	msg_end:
 	send_msg("MSG_END");

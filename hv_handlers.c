@@ -5,6 +5,7 @@
 #include "hv_handlers.h"
 #include "string.h"
 #include "smp.h"
+#include "realmode_emu.h"
 
 CHAR16 *reg_str[] = 
 {
@@ -192,9 +193,12 @@ void unknown_exit(uint64_t exit_reason){
 }
 
 void handle_failed_vmentry(uint64_t exit_reason){
+  uint64_t exit_qualification =  vmx_read(EXIT_QUALIFICATION);
+
+  print_err:
   bsp_printf("Failed vmentry.\r\n");
   bsp_printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
-  bsp_printf("Exit qualification: %u\r\n", vmx_read(EXIT_QUALIFICATION));
+  bsp_printf("Exit qualification: %u\r\n", exit_qualification);
 }
 
 void handle_vmcall(GUEST_REGS * regs){
@@ -203,13 +207,32 @@ void handle_vmcall(GUEST_REGS * regs){
 
 void handle_sipi(GUEST_REGS * regs){
   uint64_t exit_qualification = vmx_read(EXIT_QUALIFICATION);
-  uint64_t addr = exit_qualification << 12;
+  uint64_t seg = exit_qualification << 8;
+  uint8_t * eip;
+  if(!seg){ // VMware bug - EXIT_QUALIFICATION is always zero
+    seg = 0x100;
+  }
+
+  eip = (uint8_t*)(seg << 4);
+
+  vmx_write(GUEST_CS_SELECTOR, seg);
+  vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) & ~VM_ENTRY_IA32E_MODE);
+
+  // TODO: provide 32bit page tables to the guest
+  // TODO: provide stack
+
+  while(regs->hvm->guest_realsegment){ // Emulate the real mode trampoline execution
+    exec_instruction(regs, &eip);
+  }
+
+  vmx_write(GUEST_EIP, (uint64_t)eip);
+
   //CopyMem((void*)regs->hvm->st->debug_area, &addr, 8);
   //print_uintx(addr);
   //vmx_write(GUEST_EIP, addr);
-  hlt_ap:
-  vmx_write(GUEST_ACTIVITY_STATE, STATE_HLT);
-  //vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
+  resume_ap:
+  //vmx_write(GUEST_ACTIVITY_STATE, STATE_HLT);
+  vmx_write(GUEST_ACTIVITY_STATE, STATE_ACTIVE);
 }
 
 void vmexit_handler(GUEST_REGS * regs){

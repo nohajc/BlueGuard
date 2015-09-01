@@ -196,6 +196,10 @@ void vmcs_init(HVM * hvm){
   cr0 = get_cr0();
   cr3 = get_cr3();
   cr4 = get_cr4();
+  hvm->guest_CR0 = cr0;
+  hvm->guest_CR4 = cr4;
+  hvm->guest_realmode = false;
+  hvm->guest_realsegment = false;
 
   //printf("Original CR3: %x\r\n", cr3);
 

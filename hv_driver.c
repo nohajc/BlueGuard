@@ -425,13 +425,13 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     // TEST SIPI TRAP
     //start_smp();
 
-    uint8_t * eip = test;
-    for(i = 0; i < 10; ++i){
+    /*uint8_t * eip = test;
+    for(i = 0; i < 14; ++i){
       if(exec_instruction(NULL, &eip) == EMU_ERROR){
         printf("Emulator error.\r\n");
         break;
       }
-    }
+    }*/
 
     vmcs_init(bsp_hvm);
     //print(L"GUEST_CR3: "); print_uintx(vmx_read(GUEST_CR3)); print(L"\r\n");

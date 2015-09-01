@@ -2,6 +2,7 @@
 #define _VMX_API_
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <efi.h>
 #include <efilib.h>
 
@@ -287,6 +288,10 @@ typedef struct{
   EFI_PHYSICAL_ADDRESS vmcs;
   EFI_PHYSICAL_ADDRESS host_stack;
   uint64_t guest_EFER;
+  uint64_t guest_CR0;
+  uint64_t guest_CR4;
+  bool guest_realmode;
+  bool guest_realsegment;
   SharedTables * st;
 } HVM;
 
