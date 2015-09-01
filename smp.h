@@ -3,10 +3,12 @@
 
 #include <efi.h>
 #include <efilib.h>
+#include <stdarg.h>
 
 #define MSR_IA32_APIC_BASE 0x1B
 // IA32_APIC_BASE flags:
 #define APIC_ENABLED 1 << 11
+#define IS_BSP 1 << 8
 
 extern volatile int * CPUs_activated;
 extern volatile int CPU_notified;
@@ -94,5 +96,6 @@ int start_smp(void);
 void ap_entry64(uint8_t cpu);
 void recv_msg(char * str);
 void send_msg(char * str);
+int bsp_printf(const char * format, ...);
 
 #endif

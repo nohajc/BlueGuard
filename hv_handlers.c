@@ -4,6 +4,7 @@
 #include "regs.h"
 #include "hv_handlers.h"
 #include "string.h"
+#include "smp.h"
 
 CHAR16 *reg_str[] = 
 {
@@ -191,9 +192,9 @@ void unknown_exit(uint64_t exit_reason){
 }
 
 void handle_failed_vmentry(uint64_t exit_reason){
-  print(L"Failed vmentry.\r\n");
-  printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
-  printf("Exit qualification: %u\r\n", vmx_read(EXIT_QUALIFICATION));
+  bsp_printf("Failed vmentry.\r\n");
+  bsp_printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
+  bsp_printf("Exit qualification: %u\r\n", vmx_read(EXIT_QUALIFICATION));
 }
 
 void handle_vmcall(GUEST_REGS * regs){

@@ -297,7 +297,14 @@ int bsp_printf(const char * format, ...){
 	va_start(params, format);
 	
 	ret = vsprintf(str, format, params);
-	send_msg(str);
+
+	uint64_t apic_base_msr = get_msr(MSR_IA32_APIC_BASE);
+	if(apic_base_msr & IS_BSP){
+		printf("%s", str);
+	}
+	else{
+		send_msg(str);
+	}
 
 	va_end(params);
 	return ret;
@@ -350,10 +357,47 @@ void ap_entry64(uint8_t cpu){
     bsp_printf("%u: Debug area: %x\r\n", cpu, ap_hvm[cpu].st->debug_area);
 
     vmcs_init(&ap_hvm[cpu]);
+    vmx_write(GUEST_ES_SELECTOR, 0);
+	vmx_write(GUEST_CS_SELECTOR, 0);
+	vmx_write(GUEST_SS_SELECTOR, 0);
+	vmx_write(GUEST_DS_SELECTOR, 0);
+	vmx_write(GUEST_FS_SELECTOR, 0);
+	vmx_write(GUEST_GS_SELECTOR, 0);
+	vmx_write(GUEST_ES_BASE, 0);
+	vmx_write(GUEST_CS_BASE, 0);
+	vmx_write(GUEST_SS_BASE, 0);
+	vmx_write(GUEST_DS_BASE, 0);
+	vmx_write(GUEST_FS_BASE, 0);
+	vmx_write(GUEST_GS_BASE, 0);
+	vmx_write(GUEST_ES_LIMIT, 0xFFFF);
+	vmx_write(GUEST_CS_LIMIT, 0xFFFF);
+	vmx_write(GUEST_SS_LIMIT, 0xFFFF);
+	vmx_write(GUEST_DS_LIMIT, 0xFFFF);
+	vmx_write(GUEST_FS_LIMIT, 0xFFFF);
+	vmx_write(GUEST_GS_LIMIT, 0xFFFF);
+	vmx_write(GUEST_ES_AR_BYTES, 0xF3);
+	vmx_write(GUEST_CS_AR_BYTES, 0xF3);
+	vmx_write(GUEST_SS_AR_BYTES, 0xF3);
+	vmx_write(GUEST_DS_AR_BYTES, 0xF3);
+	vmx_write(GUEST_FS_AR_BYTES, 0xF3);
+	vmx_write(GUEST_GS_AR_BYTES, 0xF3);
+	vmx_write(GUEST_EFLAGS, EFLAGS_IOPL3 | EFLAGS_VM);
+	vmx_write(VM_ENTRY_CONTROLS, init_control_field(0, MSR_IA32_VMX_ENTRY_CTLS));
+
     vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
-	
+
+    send_msg("MSG_END");
+	//vm_start();
+	uint64_t error_code;
+
+	vmx_write(GUEST_ESP, 0xFFFF);
+	vmx_write(GUEST_EIP, 0xF000);
+
+	vmx_launch();
+
+	error_code = vmx_read(VM_INSTRUCTION_ERROR);
+	bsp_printf("VMLAUNCH failed.\r\nError code: %u\r\n", error_code);
+
 	msg_end:
 	send_msg("MSG_END");
-
-	vm_start();
 }

@@ -5,7 +5,7 @@
 #include "vm_setup.h"
 #include "regs.h"
 #include "string.h"
-
+#include "smp.h"
 
 void set_guest_selector(uint64_t gdt_base, uint32_t reg, uint64_t sel){
   uint64_t base;
@@ -78,10 +78,8 @@ void vm_start(void){
 
   vmx_launch();
 
-  print(L"VMLAUNCH failed.\r\nError code: ");
   error_code = vmx_read(VM_INSTRUCTION_ERROR);
-  print_uint(error_code);
-  print(L"\r\n");
+  bsp_printf("VMLAUNCH failed.\r\nError code: %u\r\n", error_code);
 }
 
 /*void check_guest_state(void){

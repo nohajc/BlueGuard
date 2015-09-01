@@ -2,6 +2,8 @@
 #define _VMX_API_
 
 #include <stdint.h>
+#include <efi.h>
+#include <efilib.h>
 
 #define PG_PRESENT 1
 #define PG_SIZE 1<<7

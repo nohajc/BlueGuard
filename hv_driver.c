@@ -12,6 +12,7 @@
 #include "smp.h"
 #include "string.h"
 #include "vm_setup.h"
+#include "realmode_emu.h"
 
 
 CHAR16 magic[] = L"MAGIC_COMM_YOLO";
@@ -424,9 +425,17 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     // TEST SIPI TRAP
     //start_smp();
 
+    uint8_t * eip = test;
+    for(i = 0; i < 10; ++i){
+      if(exec_instruction(NULL, &eip) == EMU_ERROR){
+        printf("Emulator error.\r\n");
+        break;
+      }
+    }
+
     vmcs_init(bsp_hvm);
     //print(L"GUEST_CR3: "); print_uintx(vmx_read(GUEST_CR3)); print(L"\r\n");
-    print(L"Starting VM...\r\n");
+    bsp_printf("Starting VM...\r\n");
     vm_start();
     print(L"Hello from the Guest VM!\r\n");
     //print(L"GUEST_CR3: "); print_uintx(get_cr3()); print(L"\r\n");

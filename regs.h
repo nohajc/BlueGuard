@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "vmx_api.h"
 
+#define EFLAGS_VM (1 << 17)
+#define EFLAGS_IOPL3 (3 << 12)
+
 typedef struct
 {
   uint16_t limit_0_15;
