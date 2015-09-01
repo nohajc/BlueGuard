@@ -283,15 +283,16 @@ typedef struct{
 } SharedTables;
 
 typedef struct{
-  uint32_t magic;
+  uint8_t cpu_id;
+  bool guest_realmode;
+  bool guest_realsegment;
+  uint64_t guest_EFER;
+  uint64_t guest_CR0;
+  uint64_t guest_CR3;
+  uint64_t guest_CR4;
   EFI_PHYSICAL_ADDRESS vmxon_region;
   EFI_PHYSICAL_ADDRESS vmcs;
   EFI_PHYSICAL_ADDRESS host_stack;
-  uint64_t guest_EFER;
-  uint64_t guest_CR0;
-  uint64_t guest_CR4;
-  bool guest_realmode;
-  bool guest_realsegment;
   SharedTables * st;
 } HVM;
 

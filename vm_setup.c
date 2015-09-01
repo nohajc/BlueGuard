@@ -165,7 +165,8 @@ void vmcs_init(HVM * hvm){
   vmx_write(GUEST_PENDING_DBG_EXCEPTIONS, 0);
 
   vmx_write(CR0_GUEST_HOST_MASK, X86_CR0_PG);
-  vmx_write(CR4_GUEST_HOST_MASK, X86_CR4_VMXE); //disable vmexit 0f mov to cr4 except for X86_CR4_VMXE
+  // TODO: Enable this again, maybe?
+  //vmx_write(CR4_GUEST_HOST_MASK, X86_CR4_VMXE); //disable vmexit 0f mov to cr4 except for X86_CR4_VMXE
 
   vmx_write(CR0_READ_SHADOW, (get_cr4 () & X86_CR0_PG) | X86_CR0_PG);
 
@@ -197,6 +198,7 @@ void vmcs_init(HVM * hvm){
   cr3 = get_cr3();
   cr4 = get_cr4();
   hvm->guest_CR0 = cr0;
+  hvm->guest_CR3 = cr3;
   hvm->guest_CR4 = cr4;
   hvm->guest_realmode = false;
   hvm->guest_realsegment = false;

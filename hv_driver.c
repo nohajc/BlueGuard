@@ -342,7 +342,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
       goto epilog;
     }
 
-    bsp_hvm->magic = 0xBEAF1BAF;
+    //bsp_hvm->magic = 0xBEAF1BAF;
     bsp_hvm->st = (SharedTables*)((uint64_t)bsp_hvm + sizeof(HVM));
     //printf("HVM + ST size: %u\r\n", sizeof(HVM)+sizeof(SharedTables));
 
@@ -370,6 +370,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     }
 
     for(i = 1; i < CPU_count; ++i){
+      ap_hvm[i].cpu_id = i;
       ap_hvm[i].st = bsp_hvm->st;
       ap_hvm[i].vmxon_region = (uint64_t)bsp_hvm->vmxon_region + i * 4096;
       ap_hvm[i].vmcs = (uint64_t)bsp_hvm->vmcs + i * 4096;

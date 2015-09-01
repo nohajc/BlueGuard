@@ -239,7 +239,10 @@ int start_smp(void){
 	
 	//print(L"JMP_64_PTR: "); print_uintx(JMP_64_PTR.addr); print(L"\r\n");
 
-	BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, CPU_count, (EFI_PHYSICAL_ADDRESS*)&ap_stacks);
+	/*BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, CPU_count, (EFI_PHYSICAL_ADDRESS*)&ap_stacks);
+	for(i = 1; i < CPU_count; ++i){
+		ap_hvm[i].ap_guest_stack = ((uint64_t)ap_stacks + i * 4096);
+	}*/
 
 	// Copy the trampoline code in place
 	CopyMem((void*)ap_init_code, (void*)init_tramp, tramp_size);

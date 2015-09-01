@@ -37,13 +37,32 @@ void handle_mov_to_cr(GUEST_REGS * regs, uint8_t cr_num, uint8_t gp_reg){
       /*if(!( ((uint64_t*)regs)[gp_reg] & X86_CR0_PG )){
         handle_disable_paging();
       }*/
-      vmx_write(GUEST_CR0, ((uint64_t*)regs)[gp_reg]);
+      regs->hvm->guest_CR0 = ((uint64_t*)regs)[gp_reg];
+      if(regs->hvm->guest_CR0 & X86_CR0_PG){
+        vmx_write(GUEST_CR3, regs->hvm->guest_CR3);
+        if(regs->hvm->guest_EFER & EFER_LME){
+          regs->hvm->guest_EFER |= EFER_LMA;
+          vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) | VM_ENTRY_IA32E_MODE);
+        }
+        else{
+          regs->hvm->guest_EFER &= ~EFER_LMA;
+          vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) & ~VM_ENTRY_IA32E_MODE);
+        }
+      }
+
+      vmx_write(CR0_READ_SHADOW, ((uint64_t*)regs)[gp_reg] & X86_CR0_PG);
       break;
     case 3:
-      vmx_write(GUEST_CR3, ((uint64_t*)regs)[gp_reg]);
+      regs->hvm->guest_CR3 = ((uint64_t*)regs)[gp_reg];
+      if(regs->hvm->guest_CR0 & X86_CR0_PG){
+        vmx_write(GUEST_CR3, ((uint64_t*)regs)[gp_reg]);
+      }
       break;
     case 4:
-      vmx_write(GUEST_CR4, ((uint64_t*)regs)[gp_reg]);
+      mov_to_cr4:
+      vmx_write(CR4_READ_SHADOW, ((uint64_t*)regs)[gp_reg] & X86_CR4_VMXE);
+      regs->hvm->guest_CR4 = ((uint64_t*)regs)[gp_reg];
+      vmx_write(GUEST_CR4, ((uint64_t*)regs)[gp_reg] | X86_CR4_VMXE);
       break;
     default:;
   }
@@ -55,10 +74,12 @@ void handle_mov_from_cr(GUEST_REGS * regs, uint8_t cr_num, uint8_t gp_reg){
       ((uint64_t*)regs)[gp_reg] = vmx_read(GUEST_CR0);
       break;
     case 3:
-      ((uint64_t*)regs)[gp_reg] = vmx_read(GUEST_CR3);
+      //((uint64_t*)regs)[gp_reg] = vmx_read(GUEST_CR3);
+      ((uint64_t*)regs)[gp_reg] = regs->hvm->guest_CR3;
       break;
     case 4:
-      ((uint64_t*)regs)[gp_reg] = vmx_read(GUEST_CR4);
+      //((uint64_t*)regs)[gp_reg] = vmx_read(GUEST_CR4);
+      ((uint64_t*)regs)[gp_reg] = regs->hvm->guest_CR4;
       break;
     default:;
   }
@@ -183,13 +204,19 @@ void debug_print(GUEST_REGS * regs){
   print(L"R13: "); print_uintx(regs->r13); print(L"\r\n");
   print(L"R14: "); print_uintx(regs->r14); print(L"\r\n");
   print(L"R15: "); print_uintx(regs->r15); print(L"\r\n");
-  print_uintx(regs->hvm->magic);
+  print_uintx(regs->hvm->cpu_id);
 }
 
 void unknown_exit(uint64_t exit_reason){
+  uint64_t exit_qualification =  vmx_read(EXIT_QUALIFICATION);
   /*print(L"Exit reason: ");
   print_uint(exit_reason & 0xFFFF);
   print(L"\r\n");*/
+  print_err:
+  return;
+  /*bsp_printf("Unknown exit.\r\n");
+  bsp_printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
+  bsp_printf("Exit qualification: %u\r\n", exit_qualification);*/
 }
 
 void handle_failed_vmentry(uint64_t exit_reason){
@@ -217,15 +244,16 @@ void handle_sipi(GUEST_REGS * regs){
 
   vmx_write(GUEST_CS_SELECTOR, seg);
   vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) & ~VM_ENTRY_IA32E_MODE);
+  vmx_write(GUEST_CR4, regs->hvm->guest_CR4); // Disable PAE
 
   // TODO: provide 32bit page tables to the guest
-  // TODO: provide stack
-
+  
   while(regs->hvm->guest_realsegment){ // Emulate the real mode trampoline execution
     exec_instruction(regs, &eip);
   }
 
   vmx_write(GUEST_EIP, (uint64_t)eip);
+  vmx_write(GUEST_ESP, (uint64_t)ap_stacks + regs->hvm->cpu_id * 4096);
 
   //CopyMem((void*)regs->hvm->st->debug_area, &addr, 8);
   //print_uintx(addr);
