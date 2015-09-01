@@ -364,6 +364,9 @@ void ap_entry64(uint8_t cpu){
     ap_hvm[cpu].guest_CR4 &= ~X86_CR4_PAE;
     ap_hvm[cpu].guest_realmode = true;
     ap_hvm[cpu].guest_realsegment = true;
+    // TODO: provide 32-bit page tables for the guest
+    // I don't even what is happening now...
+    vmx_write(GUEST_CR3, ap_hvm[cpu].st->host_cr3);
     /*vmx_write(GUEST_ES_SELECTOR, 0);
 	vmx_write(GUEST_CS_SELECTOR, 0);
 	vmx_write(GUEST_SS_SELECTOR, 0);
