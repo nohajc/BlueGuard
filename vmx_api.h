@@ -279,6 +279,7 @@ typedef struct{
   uint64_t tss_base;
   uint64_t tr_sel;
   uint64_t host_cr3;
+  uint64_t guest_cr3_32bit;
   uint64_t debug_area;
 } SharedTables;
 

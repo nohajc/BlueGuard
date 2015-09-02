@@ -7,6 +7,8 @@
 #define EFLAGS_VM (1 << 17)
 #define EFLAGS_IOPL3 (3 << 12)
 
+#define CPUID_PSE (1 << 3)
+
 typedef struct
 {
   uint16_t limit_0_15;

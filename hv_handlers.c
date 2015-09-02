@@ -244,7 +244,8 @@ void handle_sipi(GUEST_REGS * regs){
 
   vmx_write(GUEST_CS_SELECTOR, seg);
   vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) & ~VM_ENTRY_IA32E_MODE);
-  vmx_write(GUEST_CR4, regs->hvm->guest_CR4); // Disable PAE
+  vmx_write(GUEST_CR4, regs->hvm->guest_CR4); // Disable PAE, enable PSE (if supported)
+  vmx_write(GUEST_CR3, regs->hvm->st->guest_cr3_32bit); // Load 32-bit page tables
 
   // TODO: provide 32bit page tables to the guest
   

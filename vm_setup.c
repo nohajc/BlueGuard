@@ -7,6 +7,9 @@
 #include "string.h"
 #include "smp.h"
 
+FEATURES features;
+
+
 void set_guest_selector(uint64_t gdt_base, uint32_t reg, uint64_t sel){
   uint64_t base;
   uint32_t limit;
@@ -166,7 +169,7 @@ void vmcs_init(HVM * hvm){
 
   vmx_write(CR0_GUEST_HOST_MASK, X86_CR0_PG);
   // TODO: Enable this again, maybe?
-  //vmx_write(CR4_GUEST_HOST_MASK, X86_CR4_VMXE); //disable vmexit 0f mov to cr4 except for X86_CR4_VMXE
+  vmx_write(CR4_GUEST_HOST_MASK, X86_CR4_VMXE); //disable vmexit 0f mov to cr4 except for X86_CR4_VMXE
 
   vmx_write(CR0_READ_SHADOW, (get_cr4 () & X86_CR0_PG) | X86_CR0_PG);
 

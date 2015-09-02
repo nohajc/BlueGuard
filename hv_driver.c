@@ -247,6 +247,8 @@ int prepare_shared_hvm_tables(HVM * hvm){
   uint16_t limit;
   uint64_t cr3 = get_cr3();
   SharedTables * st = hvm->st;
+  uint64_t rax, rbx, rcx, rdx;
+  uint32_t i;
   
   // Copy IDT
   get_idt_base_limit(&base, &limit);
@@ -296,6 +298,28 @@ int prepare_shared_hvm_tables(HVM * hvm){
   if(err != EFI_SUCCESS){
     return 0;
   }
+
+  rax = 1;
+  emu_cpuid(&rax, &rbx, &rcx, &rdx);
+  //printf("CPUID.01H:EDX = %b\r\n", rdx);
+  if(rdx & CPUID_PSE){ // 4 MB pages supported in 32 bit
+    features.pse = true;
+    //printf("Host CR3: %b\r\n", get_cr3());
+    //printf("PML4TE: %b\r\n", *(uint64_t*)(get_cr3() & ~0xFFF));
+
+    st->guest_cr3_32bit = 0xFFFFFFFF;
+    BS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, 1, &st->guest_cr3_32bit);
+
+    uint32_t * pde = (uint32_t*)st->guest_cr3_32bit;
+    for(i = 0; i < 1024; ++i){
+      pde[i] = (i << 22) | 0x83; // 7 (PS), 1 (R/W), 0 (P)
+    }
+  }
+  else{
+    features.pse = false;
+    // TODO: Alloc and init classic 4 KB page tables
+  }
+
   //printf("Debug area: %x\r\n", st->debug_area);
 
   return 1;

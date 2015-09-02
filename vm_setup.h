@@ -3,6 +3,12 @@
 
 #include "vmx_api.h"
 
+typedef struct{
+	bool pse;
+} FEATURES;
+
+extern FEATURES features;
+
 void vmcs_init(HVM * hvm);
 void vm_start(void);
 uint32_t init_control_field(uint32_t ctl, uint32_t msr);
