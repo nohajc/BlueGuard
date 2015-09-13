@@ -1,6 +1,7 @@
 #include <efi.h>
 #include <efilib.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include "smp.h"
 #include "regs.h"
 #include "lib_uefi.h"
@@ -8,12 +9,15 @@
 #include "spinlock.h"
 #include "string.h"
 #include "vm_setup.h"
+#include "vmx_emu.h"
 
 int CPU_count = 0;
 volatile int * CPUs_activated;
 volatile int CPU_notified;
 uint64_t LAPIC_addr;
 uint8_t ProcAPIC_IDs[256];
+uint32_t Proc_x2APIC_IDs[256];
+bool x2APIC_enabled = false;
 
 void * ap_stacks;
 
@@ -49,8 +53,14 @@ int read_apic_table(MADT * madt){
 
 			if(lapic->Flags & PROC_ENABLED){
 				print(L"Detected CPU "); print_uint(lapic->ProcID); print(L" with APIC ID "); print_uint(lapic->APIC_ID); print(L"\r\n");
-				ProcAPIC_IDs[CPU_count++] = lapic->APIC_ID;
+				ProcAPIC_IDs[CPU_count] = lapic->APIC_ID;
+				Proc_x2APIC_IDs[CPU_count++] = lapic->APIC_ID;
 			}
+		}
+		else if(hdr->Type == TypeProcLocal_x2APIC){
+			EntryProcLocal_x2APIC * lapic = (EntryProcLocal_x2APIC*)hdr;
+			printf("Detected CPU with x2APIC ID %u\r\n", lapic->x2APIC_ID);
+			Proc_x2APIC_IDs[CPU_count++] = lapic->x2APIC_ID;
 		}
 
 		apic_struct_ptr += hdr->Length;
@@ -120,11 +130,39 @@ inline void write_lapic_reg(uint32_t offset, uint32_t value){
 	*(uint32_t*)(LAPIC_addr + offset) = value;
 }
 
+void send_sipi(uint64_t tramp_addr, int i){
+	printf("About to send SIPI to %u\r\n", ProcAPIC_IDs[i]);
+	if(x2APIC_enabled){
+		set_msr(MSR_INT_COMMAND_REG, ((uint64_t)Proc_x2APIC_IDs[i] << 32) | DM_STARTUP | LVL_ASSERT | (tramp_addr >> 12));
+		printf("Wrote ICR\r\n");
+	}
+	else{
+		write_lapic_reg(INT_COMMAND_REG_HIGH, (uint32_t)ProcAPIC_IDs[i] << 24); // Set destination
+		printf("Wrote ICR_HIGH\r\n");
+		// Entry point must be a 4 KB aligned address below 1 MB. It is coded as 8-bit vector with a value of entry_addr >> 12.
+		write_lapic_reg(INT_COMMAND_REG_LOW, DM_STARTUP | LVL_ASSERT | (tramp_addr >> 12)); // Set interrupt type and entry point
+		printf("Wrote ICR_LOW\r\n");
+	}
+
+	//print(L"SIPI send to CPU "); print_uint(i); print(L"\r\n");
+	if(!x2APIC_enabled){
+		while(read_lapic_reg(INT_COMMAND_REG_LOW) & DLV_STATUS); // Wait for completion
+	}
+	printf("Completed SIPI\r\n");
+}
+
 int activate_APs(uint64_t tramp_addr){
-	uint8_t bspLAPIC_ID = (uint8_t)read_lapic_reg(LAPIC_ID_REG);
-	int i;
+	uint8_t bspLAPIC_ID;
+	int i, t;
 	uint8_t tmp;
 	//uint32_t * ap_cr0 = (uint32_t*)(tramp_addr + tramp_size - 4);
+
+	if(x2APIC_enabled){
+		bspLAPIC_ID = (uint8_t)get_msr(MSR_LAPIC_ID_REG);
+	}
+	else{
+		bspLAPIC_ID = (uint8_t)read_lapic_reg(LAPIC_ID_REG);
+	}
 
 	print(L"Press a key to activate APs...\r\n");
 
@@ -139,26 +177,49 @@ int activate_APs(uint64_t tramp_addr){
 		tmp = *CPUs_activated;
 
 		// Send INIT
-		write_lapic_reg(INT_COMMAND_REG_HIGH, (uint32_t)ProcAPIC_IDs[i] << 24); // Set destination
-		write_lapic_reg(INT_COMMAND_REG_LOW, DM_INIT | LVL_ASSERT); // Set interrupt type
+		printf("About to send INIT to %u\r\n", ProcAPIC_IDs[i]);
+		if(x2APIC_enabled){
+			set_msr(MSR_INT_COMMAND_REG, ((uint64_t)Proc_x2APIC_IDs[i] << 32) | DM_INIT | LVL_ASSERT);
+		}
+		else{
+			write_lapic_reg(INT_COMMAND_REG_HIGH, (uint32_t)ProcAPIC_IDs[i] << 24); // Set destination
+			write_lapic_reg(INT_COMMAND_REG_LOW, DM_INIT | LVL_ASSERT); // Set interrupt type
+		}
 
 		//print(L"INIT send to CPU "); print_uint(i); print(L"\r\n");
-		while(read_lapic_reg(INT_COMMAND_REG_LOW) & DLV_STATUS); // Wait for completion
+		if(!x2APIC_enabled){
+			while(read_lapic_reg(INT_COMMAND_REG_LOW) & DLV_STATUS); // Wait for completion
+		}
 
 		BS->Stall(10 * 1000); // Wait 10 ms
 
-		// Send SIPI
-		write_lapic_reg(INT_COMMAND_REG_HIGH, (uint32_t)ProcAPIC_IDs[i] << 24); // Set destination
-		// Entry point must be a 4 KB aligned address below 1 MB. It is coded as 8-bit vector with a value of entry_addr >> 12.
-		write_lapic_reg(INT_COMMAND_REG_LOW, DM_STARTUP | LVL_ASSERT | (tramp_addr >> 12)); // Set interrupt type and entry point
+		send_sipi(tramp_addr, i);
 
-		//print(L"SIPI send to CPU "); print_uint(i); print(L"\r\n");
-		while(read_lapic_reg(INT_COMMAND_REG_LOW) & DLV_STATUS); // Wait for completion
+		// Poll 1 ms for CPUs_activated increment
+		t = 0;
+		while(*CPUs_activated == tmp && t < 1000){
+			BS->Stall(1);
+			++t;
+		}
+		if(*CPUs_activated == tmp){ // Processor hasn't started yet
+			/*// Send another SIPI
+			printf("About to send another SIPI to %u\r\n", ProcAPIC_IDs[i]);
+			write_lapic_reg(INT_COMMAND_REG_HIGH, (uint32_t)ProcAPIC_IDs[i] << 24);
+			printf("Wrote ICR_HIGH\r\n");
+			write_lapic_reg(INT_COMMAND_REG_LOW, DM_STARTUP | LVL_ASSERT | (tramp_addr >> 12));
+			printf("Wrote ICR_LOW\r\n");
+			while(read_lapic_reg(INT_COMMAND_REG_LOW) & DLV_STATUS);
+			printf("Completed another SIPI\r\n");*/
 
-		//BS->Stall(1 * 1000); // Wait 1 ms
-		while(*CPUs_activated == tmp);
+			send_sipi(tramp_addr, i);
+
+			t = 0;
+			while(*CPUs_activated == tmp && t < 1000){
+				BS->Stall(1000);
+				++t;
+			}
+		}
 	}
-	// TODO: Add better synchronization (continue flag)
 	BS->Stall(50 * 1000); // Wait 50 ms
 
 
@@ -172,6 +233,8 @@ int init_smp(void){
 	int i;
 	int acpi1_idx = -1;
 	int acpi2_idx = -1;
+	uint64_t rax, rbx, rcx, rdx;
+	uint64_t apic_base_msr = get_msr(MSR_IA32_APIC_BASE);
 
 	for(i = 0; i < ST->NumberOfTableEntries; ++i){
 		if(guid_eq(CT[i].VendorGuid, Acpi20TableGuid)){
@@ -181,6 +244,20 @@ int init_smp(void){
 		else if(guid_eq(CT[i].VendorGuid, AcpiTableGuid)){
 			acpi1_idx = i;
 		}
+	}
+
+	rax = 1;
+	emu_cpuid(&rax, &rbx, &rcx, &rdx);
+	if(rcx & (1 << 21)){
+		x2APIC_enabled = true;
+		printf("x2APIC supported!\r\n");
+
+		// Enable x2APIC
+		apic_base_msr |= 3ULL << 10;
+		set_msr(MSR_IA32_APIC_BASE, apic_base_msr);
+	}
+	else{
+		printf("x2APIC not supported\r\n");
 	}
 
 	if(acpi2_idx >= 0){
@@ -195,15 +272,49 @@ int init_smp(void){
 	return 1;
 }
 
+void print_idt_entry(uint64_t base, uint8_t vec){
+	IDT_ENTRY * entry = (IDT_ENTRY*)(base + (vec << 4));
+	/*
+	uint16_t offset_0_15;
+	uint16_t segment_sel;
+	uint8_t attr;
+	uint8_t p_dpl_type;
+	uint16_t offset_16_31;
+	uint32_t offset_32_63;
+	*/
+
+	printf(
+		"vector: %x, segment: %x, offset: %x, attr: %x, p_dpl_type: %x\r\n",
+		vec,
+		entry->segment_sel,
+		entry->offset_0_15 | ((entry->offset_16_31 << 16) & 0xFFFFFFFF) | ((uint64_t)entry->offset_32_63 << 32),
+		entry->attr,
+		entry->p_dpl_type
+	);
+}
+
 int start_smp(void){
 	EFI_PHYSICAL_ADDRESS ap_init_code = 0xFFFF;
 	EFI_STATUS st;
 	uint64_t apic_base_msr = get_msr(MSR_IA32_APIC_BASE);
+	uint64_t base;
+	uint16_t limit;
 
 	if(!(apic_base_msr & APIC_ENABLED)){
 		// TODO enable APIC manually
 		return 0;
 	}
+	printf("MSR_IA32_APIC_BASE: %b\r\n", apic_base_msr);
+	//write_lapic_reg(SPURIOUS_INT_REG, read_lapic_reg(SPURIOUS_INT_REG) | 0xFF);
+	//printf("Spurious interrupt register: %b\r\n", read_lapic_reg(SPURIOUS_INT_REG));
+
+	/*get_idt_base_limit(&base, &limit);
+
+	print_idt_entry(base, 13);
+	print_idt_entry(base, 15);
+	print_idt_entry(base, 254);
+	print_idt_entry(base, 255);*/
+
 	//print(L"Local APIC is enabled!\r\n");
 
 	st = BS->AllocatePages(AllocateMaxAddress, EfiLoaderCode, 1, &ap_init_code);
@@ -400,6 +511,7 @@ void ap_entry64(uint8_t cpu){
 
     send_msg("MSG_END");
     vm_start();
+    return;
 	/*uint64_t error_code;
 
 	vmx_write(GUEST_ESP, 0xFFFF);

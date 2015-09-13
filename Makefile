@@ -8,6 +8,7 @@ SUBSYS_RTDRV=-Wl,--subsystem,12
 ASM=nasm
 
 VM_IMG="/media/data/Virtual Machines/vmware/Windows 8 x64/Windows 8 x64.vmdk"
+KVM_IMG="/media/data/Virtual Machines/kvm_win8.1.vmdk"
 MOUNT_POINT=vm_mount
 EFI_PATH=$(MOUNT_POINT)/EFI/BlueGuard
 
@@ -74,8 +75,25 @@ install:
 	cp *.efi $(EFI_PATH)
 	/opt/vmware/bin/vmware-mount -k $(VM_IMG)
 
+hw_install:
+	mkdir -p /mnt/efi
+	mount /dev/sda1 /mnt/efi
+	cp bootx64.efi /mnt/efi/EFI/BlueGuard/blueguard.efi
+	cp hv_driver.efi /mnt/efi/EFI/BlueGuard/hv_driver.efi
+	umount /mnt/efi
+
+kvm_install:
+	mkdir -p $(MOUNT_POINT)
+	/opt/vmware/bin/vmware-mount $(KVM_IMG) 2 $(MOUNT_POINT)
+	mkdir -p $(EFI_PATH)
+	cp *.efi $(EFI_PATH)
+	/opt/vmware/bin/vmware-mount -k $(KVM_IMG)
+
 umount:
 	/opt/vmware/bin/vmware-mount -k $(VM_IMG)
+
+kvm_umount:
+	/opt/vmware/bin/vmware-mount -k $(KVM_IMG)
 
 
 clean:

@@ -405,6 +405,17 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
       print(L"Error preparing shared hvm tables.\r\n");
     }
 
+
+    st = BS->OpenProtocol(image, &LoadedImageProtocol, (VOID **)&loaded_image,
+                                image, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
+    if(EFI_ERROR(st)){
+      print(L"Error getting a LoadedImageProtocol handle.\r\n");
+      goto epilog;
+    }
+    printf("Image base: %x\r\n", loaded_image->ImageBase);
+
+    //migrate_image(loaded_image);
+
     // Start the rest of CPUs
     start_smp();
 
@@ -436,15 +447,6 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     }
 
     
-    /*st = BS->OpenProtocol(image, &LoadedImageProtocol, (VOID **)&loaded_image,
-                                image, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL);
-    if(EFI_ERROR(st)){
-      print(L"Error getting a LoadedImageProtocol handle.\r\n");
-      goto epilog;
-    }*/
-
-    //migrate_image(loaded_image);
-
     //print(L"HOST_CR3: "); print_uintx(get_cr3()); print(L"\r\n");
 
     // TEST SIPI TRAP

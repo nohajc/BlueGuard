@@ -17,19 +17,25 @@ extern uint64_t LAPIC_addr;
 
 extern void * ap_stacks;
 
-//Local APIC Register Addresses
+// Local APIC Register Addresses
 #define LAPIC_ID_REG 0x20
 #define SPURIOUS_INT_REG 0xF0
 #define INT_COMMAND_REG_LOW 0x300
 #define INT_COMMAND_REG_HIGH 0x310
 
-//IPI flags
+// Local x2APIC Registers
+#define MSR_LAPIC_ID_REG 0x802
+#define MSR_SPURIOUS_INT_REG 0x80F
+#define MSR_INT_COMMAND_REG 0x830
+
+// IPI flags
 #define DLV_STATUS 1 << 12 // 0: command completed, 1: command pending
 #define LVL_ASSERT 1 << 14
 #define DM_INIT 5 << 8
 #define DM_STARTUP 6 << 8
 
 extern uint8_t ProcAPIC_IDs[256];
+extern uint32_t Proc_x2APIC_IDs[256];
 
 typedef struct _RSDP{
 	// In ACPI >= 1
@@ -77,7 +83,8 @@ typedef struct _MADT{
 
 enum{
 	TypeProcLocalAPIC,
-	TypeIO_APIC
+	TypeIO_APIC,
+	TypeProcLocal_x2APIC = 9
 	/* ... */
 };
 
@@ -90,6 +97,13 @@ typedef struct _EntryProcLocalAPIC{
 	uint32_t Flags;
 } __attribute__((packed)) EntryProcLocalAPIC;
 
+typedef struct _EntryProcLocal_x2APIC{
+	APICStructHeader h;
+	uint16_t reserved;
+	uint32_t x2APIC_ID;
+	uint32_t Flags;
+	uint32_t ProcUID;
+} __attribute__((packed)) EntryProcLocal_x2APIC;
 
 int init_smp(void);
 int start_smp(void);

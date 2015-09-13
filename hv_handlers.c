@@ -256,6 +256,10 @@ void handle_sipi(GUEST_REGS * regs){
   vmx_write(GUEST_EIP, (uint64_t)eip);
   vmx_write(GUEST_ESP, (uint64_t)ap_stacks + regs->hvm->cpu_id * 4096);
 
+  // Inject brakpoint
+  //*(uint8_t*)0x16B1 = 0xCC;
+  //*(uint64_t*)0x16B2 = 0x90;
+
   //CopyMem((void*)regs->hvm->st->debug_area, &addr, 8);
   //print_uintx(addr);
   //vmx_write(GUEST_EIP, addr);

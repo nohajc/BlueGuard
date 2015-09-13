@@ -16,6 +16,7 @@ global get_gdt_base_limit
 global get_idt_base_limit
 global get_ldtr
 global get_msr
+global set_msr
 global set_tr
 global set_gdt_base_limit
 
@@ -106,6 +107,13 @@ get_msr:
 	rdmsr
 	shl rdx,32
 	or rax,rdx
+	ret
+
+set_msr:
+	mov rax,rdx
+	and rax,0FFFFFFFFh
+	shr rdx,32
+	wrmsr
 	ret
 
 set_tr:

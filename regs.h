@@ -19,6 +19,17 @@ typedef struct
   uint8_t base_24_31;
 } GDT_ENTRY;
 
+typedef struct
+{
+  uint16_t offset_0_15;
+  uint16_t segment_sel;
+  uint8_t attr;
+  uint8_t p_dpl_type;
+  uint16_t offset_16_31;
+  uint32_t offset_32_63;
+  uint32_t reserved;
+} __attribute__ ((packed)) IDT_ENTRY;
+
 enum
 {
   ES = 0,
@@ -69,6 +80,7 @@ void get_gdt_base_limit(uint64_t * base, uint16_t * limit);
 void get_idt_base_limit(uint64_t * base, uint16_t * limit);
 uint64_t get_ldtr(void);
 uint64_t get_msr(uint64_t index);
+uint64_t set_msr(uint64_t index, uint64_t value);
 
 void set_tr(uint64_t sel);
 void set_gdt_base_limit(uint64_t base, uint64_t limit);
