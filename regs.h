@@ -17,7 +17,7 @@ typedef struct
   uint8_t attr_0_7;
   uint8_t limit_16_19_attr_8_11;
   uint8_t base_24_31;
-} GDT_ENTRY;
+} __attribute__ ((packed)) GDT_ENTRY;
 
 typedef struct
 {

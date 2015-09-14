@@ -17,7 +17,7 @@ all: bootx64.efi hv_driver.efi
 bootx64.efi: blueguard.o data.o rtdata.o lib_uefi.o
 	$(CC) $(LDFLAGS) $(SUBSYS_APP) -o $@ $^
 
-hv_driver.efi: hv_driver.o hv_handlers.o data.o rtdata.o lib_uefi.o vmx_api.o vmx_emu.o vm_setup.o regs.o reloc_pe.o smp.o ap_trampoline.o spinlock.o string.o realmode_emu.o
+hv_driver.efi: hv_driver.o hv_handlers.o data.o rtdata.o lib_uefi.o vmx_api.o vmx_emu.o vm_setup.o regs.o reloc_pe.o smp.o ap_trampoline.o spinlock.o pic.o string.o realmode_emu.o
 	$(CC) $(LDFLAGS) $(SUBSYS_RTDRV) -o $@ $^
 
 blueguard.o: blueguard.c
@@ -57,6 +57,9 @@ ap_trampoline.o: ap_trampoline.asm ap_trampoline.h
 	$(ASM) -f win64 $< -o $@
 
 spinlock.o: spinlock.asm spinlock.h
+	$(ASM) -f win64 $< -o $@
+
+pic.o: pic.asm pic.h
 	$(ASM) -f win64 $< -o $@
 
 reloc_pe.o: reloc_pe.c reloc_pe.h

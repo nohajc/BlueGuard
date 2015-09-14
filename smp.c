@@ -10,6 +10,7 @@
 #include "string.h"
 #include "vm_setup.h"
 #include "vmx_emu.h"
+#include "pic.h"
 
 int CPU_count = 0;
 volatile int * CPUs_activated;
@@ -233,8 +234,10 @@ int init_smp(void){
 	int i;
 	int acpi1_idx = -1;
 	int acpi2_idx = -1;
-	uint64_t rax, rbx, rcx, rdx;
+	//uint64_t rax, rbx, rcx, rdx;
 	uint64_t apic_base_msr = get_msr(MSR_IA32_APIC_BASE);
+
+	disable_pic();
 
 	for(i = 0; i < ST->NumberOfTableEntries; ++i){
 		if(guid_eq(CT[i].VendorGuid, Acpi20TableGuid)){
@@ -246,9 +249,10 @@ int init_smp(void){
 		}
 	}
 
-	rax = 1;
+	/*rax = 1;
 	emu_cpuid(&rax, &rbx, &rcx, &rdx);
-	if(rcx & (1 << 21)){
+	if(rcx & (1 << 21)){ // x2APIC supported
+		// Enable x2APIC
 		x2APIC_enabled = true;
 		printf("x2APIC supported!\r\n");
 
@@ -258,7 +262,7 @@ int init_smp(void){
 	}
 	else{
 		printf("x2APIC not supported\r\n");
-	}
+	}*/
 
 	if(acpi2_idx >= 0){
 		print(L"Found ACPI 2 GUID\r\n");
