@@ -294,10 +294,12 @@ int prepare_shared_hvm_tables(HVM * hvm){
   }
   st->host_cr3 |= cr3 & 0xFFF;
 
-  err = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 3, &st->debug_area);
+  err = BS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 1, &st->debug_area);
   if(err != EFI_SUCCESS){
     return 0;
   }
+
+  ZeroMem((void*)st->debug_area, 4096);
 
   rax = 1;
   emu_cpuid(&rax, &rbx, &rcx, &rdx);
@@ -308,7 +310,10 @@ int prepare_shared_hvm_tables(HVM * hvm){
     //printf("PML4TE: %b\r\n", *(uint64_t*)(get_cr3() & ~0xFFF));
 
     st->guest_cr3_32bit = 0xFFFFFFFF;
-    BS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, 1, &st->guest_cr3_32bit);
+    err = BS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, 1, &st->guest_cr3_32bit);
+    if(err != EFI_SUCCESS){
+      return 0;
+    }
 
     uint32_t * pde = (uint32_t*)st->guest_cr3_32bit;
     for(i = 0; i < 1024; ++i){
@@ -319,6 +324,33 @@ int prepare_shared_hvm_tables(HVM * hvm){
     features.pse = false;
     // TODO: Alloc and init classic 4 KB page tables
   }
+
+
+  uint64_t ept_area_size;
+  uint64_t ept_capabilities = get_msr(MSR_IA32_VMX_EPT_VPID_CAP);
+  features.ept_cap_2MB_page = ept_capabilities & 0x10000;
+  features.ept_cap_1GB_page = ept_capabilities & 0x20000;
+
+  if(features.ept_cap_1GB_page){
+    ept_area_size = 1 + 512;
+  }
+  else if(features.ept_cap_2MB_page){
+    ept_area_size = 1 + 512 + 512 * 512;
+  }
+
+  st->ept_area = 0xFFFFFFFF;
+  err = BS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, ept_area_size, &st->ept_area); // Space for EPT PML4T and 512 PDPTs
+  if(err != EFI_SUCCESS){
+    return 0;
+  }
+
+  //ZeroMem((void*)st->ept_area, ept_area_size * 4096);
+  uint64_t * ept_ptr = (uint64_t*)st->ept_area;
+  uint64_t * ept_end = ept_ptr + ept_area_size * 512;
+  while(ept_ptr != ept_end){
+    *ept_ptr++ = 0;
+  }
+
 
   //printf("Debug area: %x\r\n", st->debug_area);
 
@@ -348,6 +380,30 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     }
     else{
         print(L"Error: VMX is not supported.\r\n");
+        goto epilog;
+    }
+
+    if(vmx_ug_supported()){
+        printf("VMX Unrestricted Guest supported!\r\n");
+    }
+    else{
+        printf("Error: VMX Unrestricted Guest not supported.\r\n");
+        goto epilog;
+    }
+
+    if(vmx_ept_supported()){
+        printf("VMX EPT supported!\r\n");
+    }
+    else{
+        printf("Error: VMX EPT not supported.\r\n");
+        goto epilog;
+    }
+
+    if(vmx_vpid_supported()){
+        printf("VMX VPID supported!\r\n");
+    }
+    else{
+        printf("Error: VMX EPT not supported.\r\n");
         goto epilog;
     }
 
@@ -393,6 +449,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
       goto epilog;
     }
 
+    bsp_hvm->cpu_id = 0;
     for(i = 1; i < CPU_count; ++i){
       ap_hvm[i].cpu_id = i;
       ap_hvm[i].st = bsp_hvm->st;
@@ -462,6 +519,8 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
 
     vmcs_init(bsp_hvm);
     //print(L"GUEST_CR3: "); print_uintx(vmx_read(GUEST_CR3)); print(L"\r\n");
+    bsp_printf("Press a key to start VM.\r\n");
+    wait_for_key();
     bsp_printf("Starting VM...\r\n");
     vm_start();
     print(L"Hello from the Guest VM!\r\n");

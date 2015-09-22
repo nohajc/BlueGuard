@@ -12,7 +12,8 @@
 #define MSR_IA32_VMX_BASIC   		0x480
 #define MSR_IA32_FEATURE_CONTROL 	0x03a
 #define MSR_IA32_VMX_PINBASED_CTLS	0x481
-#define MSR_IA32_VMX_PROCBASED_CTLS	0x482
+#define MSR_IA32_VMX_PROCBASED_CTLS 0x482
+#define MSR_IA32_VMX_PROCBASED_CTLS2	0x48b
 #define MSR_IA32_VMX_EXIT_CTLS		0x483
 #define MSR_IA32_VMX_ENTRY_CTLS		0x484
 
@@ -20,6 +21,8 @@
 #define MSR_IA32_VMX_CR0_FIXED1     0x487
 #define MSR_IA32_VMX_CR4_FIXED0     0x488
 #define MSR_IA32_VMX_CR4_FIXED1     0x489
+
+#define MSR_IA32_VMX_EPT_VPID_CAP   0x48c
 
 #define MSR_IA32_SYSENTER_CS		0x174
 #define MSR_IA32_SYSENTER_ESP		0x175
@@ -102,6 +105,10 @@ enum{
   TSC_OFFSET_HIGH = 0x00002011,
   VIRTUAL_APIC_PAGE_ADDR = 0x00002012,
   VIRTUAL_APIC_PAGE_ADDR_HIGH = 0x00002013,
+  EPT_POINTER_FULL = 0x0000201a,
+  EPT_POINTER_HIGH = 0x0000201b,
+  GUEST_PHYS_ADDR = 0x00002400,
+  GUEST_PHYS_ADDR_HIGH = 0x00002401,
   // 64 bits Guest State Fields
   VMCS_LINK_POINTER = 0x00002800,
   VMCS_LINK_POINTER_HIGH = 0x00002801,
@@ -251,7 +258,8 @@ enum{
 #define EXIT_REASON_PAUSE_INSTRUCTION 40
 #define EXIT_REASON_MACHINE_CHECK 41
 #define EXIT_REASON_TPR_BELOW_THRESHOLD 43
-#define VMX_MAX_GUEST_VMEXIT EXIT_REASON_TPR_BELOW_THRESHOLD
+#define EXIT_REASON_EPT_MISCONFIGURATION 49
+#define VMX_MAX_GUEST_VMEXIT EXIT_REASON_EPT_MISCONFIGURATION
 
 #define CPU_BASED_ACTIVATE_MSR_BITMAP   0x10000000
 
@@ -260,6 +268,12 @@ enum{
 #define VM_EXIT_ACK_INTR_ON_EXIT        0x00008000
 #define VM_EXIT_SAVE_IA32_EFER          0x00100000
 //#define VM_EXIT_LOAD_IA32_EFER          0x00200000
+
+#define VM_EXEC_PROCBASED_CTLS2_ENABLE 0x80000000
+#define VM_EXEC_UG  0x80
+#define VM_EXEC_EPT 0x2
+#define VM_EXEC_VPID 0x20
+
 
 #define VM_ENTRY_IA32E_MODE             0x00000200
 #define VM_ENTRY_SMM                    0x00000400
@@ -280,6 +294,7 @@ typedef struct{
   uint64_t tr_sel;
   uint64_t host_cr3;
   uint64_t guest_cr3_32bit;
+  uint64_t ept_area;
   uint64_t debug_area;
 } SharedTables;
 
@@ -301,6 +316,9 @@ extern HVM * bsp_hvm;
 extern HVM * ap_hvm; // array of AP HVMs
 
 int vmx_supported(void);
+int vmx_ug_supported(void);
+int vmx_ept_supported(void);
+int vmx_vpid_supported(void);
 void vmx_get_revision_and_struct_size(uint32_t * rev, uint32_t * struct_size);
 void vmx_enable(void);
 int vmx_switch_to_root_op(void * vmxon_region);

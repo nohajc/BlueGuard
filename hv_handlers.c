@@ -209,6 +209,7 @@ void debug_print(GUEST_REGS * regs){
 
 void unknown_exit(uint64_t exit_reason){
   uint64_t exit_qualification =  vmx_read(EXIT_QUALIFICATION);
+  uint64_t guest_rip = vmx_read(GUEST_EIP);
   /*print(L"Exit reason: ");
   print_uint(exit_reason & 0xFFFF);
   print(L"\r\n");*/
@@ -217,6 +218,11 @@ void unknown_exit(uint64_t exit_reason){
   /*bsp_printf("Unknown exit.\r\n");
   bsp_printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
   bsp_printf("Exit qualification: %u\r\n", exit_qualification);*/
+}
+
+void handle_ept_misconfiguration(GUEST_REGS * regs){
+  uint64_t guest_phys_addr = vmx_read(GUEST_PHYS_ADDR);
+  bsp_printf("EPT misconfiguration accessing address 0x%x\r\n", guest_phys_addr);
 }
 
 void handle_failed_vmentry(uint64_t exit_reason){
@@ -236,11 +242,18 @@ void handle_sipi(GUEST_REGS * regs){
   uint64_t exit_qualification = vmx_read(EXIT_QUALIFICATION);
   uint64_t seg = exit_qualification << 8;
   uint8_t * eip;
+  uint32_t magic = 0x1BAF2BAF;
+
+  CopyMem((void*)regs->hvm->st->debug_area, &magic, 4);
+  CopyMem((void*)(regs->hvm->st->debug_area + 4 * regs->hvm->cpu_id), &seg, 4);
+
   if(!seg){ // VMware bug - EXIT_QUALIFICATION is always zero
     seg = 0x100;
   }
 
   eip = (uint8_t*)(seg << 4);
+
+  
 
   vmx_write(GUEST_CS_SELECTOR, seg);
   vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) & ~VM_ENTRY_IA32E_MODE);
@@ -260,9 +273,6 @@ void handle_sipi(GUEST_REGS * regs){
   //*(uint8_t*)0x16B1 = 0xCC;
   //*(uint64_t*)0x16B2 = 0x90;
 
-  //CopyMem((void*)regs->hvm->st->debug_area, &addr, 8);
-  //print_uintx(addr);
-  //vmx_write(GUEST_EIP, addr);
   resume_ap:
   //vmx_write(GUEST_ACTIVITY_STATE, STATE_HLT);
   vmx_write(GUEST_ACTIVITY_STATE, STATE_ACTIVE);
@@ -273,8 +283,10 @@ void vmexit_handler(GUEST_REGS * regs){
   // VMCALL, VMCLEAR, VMLAUNCH, VMPTRLD, VMPTRST, VMREAD, VMRESUME, VMWRITE, VMXOFF, VMXON
   uint64_t exit_reason = vmx_read(VM_EXIT_REASON);
   uint64_t guest_rip, instr_len;
+  uint64_t debug_msg = exit_reason & 0xFFFF;
 
   //debug_print(regs);
+  CopyMem((void*)(regs->hvm->st->debug_area + 4 * regs->hvm->cpu_id), &debug_msg, 4);
 
   if(exit_reason & VMX_EXIT_REASONS_FAILED_VMENTRY){
     handle_failed_vmentry(exit_reason);
@@ -300,6 +312,9 @@ void vmexit_handler(GUEST_REGS * regs){
     case EXIT_REASON_SIPI:
       handle_sipi(regs);
       return;
+    case EXIT_REASON_EPT_MISCONFIGURATION:
+      handle_ept_misconfiguration(regs);
+      break;
     default:;
       unknown_exit(exit_reason & 0xFFFF);
   }

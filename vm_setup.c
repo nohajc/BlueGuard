@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "lib_uefi.h"
 #include "vm_setup.h"
+#include "vmx_emu.h"
 #include "regs.h"
 #include "string.h"
 #include "smp.h"
@@ -280,7 +281,8 @@ void vmcs_init(HVM * hvm){
   vmx_write(PIN_BASED_VM_EXEC_CONTROL, init_control_field(0, MSR_IA32_VMX_PINBASED_CTLS));
 
   //CPU_BASED_ACTIVATE_MSR_BITMAP
-  vmx_write(PRIMARY_CPU_BASED_VM_EXEC_CONTROL, init_control_field(0, MSR_IA32_VMX_PROCBASED_CTLS));
+  vmx_write(PRIMARY_CPU_BASED_VM_EXEC_CONTROL, init_control_field(VM_EXEC_PROCBASED_CTLS2_ENABLE, MSR_IA32_VMX_PROCBASED_CTLS));
+  vmx_write(SECONDARY_CPU_BASED_VM_EXEC_CONTROL, init_control_field(VM_EXEC_UG | VM_EXEC_EPT, MSR_IA32_VMX_PROCBASED_CTLS2));
   //print(L"CPU_BASED_VM_EXEC_CONTROL: "); print_uintb(vmx_read(PRIMARY_CPU_BASED_VM_EXEC_CONTROL)); print(L"\r\n");
 
   vmx_write(VM_EXIT_CONTROLS, init_control_field(VM_EXIT_IA32E_MODE | VM_EXIT_ACK_INTR_ON_EXIT, MSR_IA32_VMX_EXIT_CTLS));
@@ -333,4 +335,64 @@ void vmcs_init(HVM * hvm){
   print(L"Guest ES limit: "); print_uintx(vmx_read(GUEST_ES_LIMIT)); print(L"\r\n");
   print(L"Guest FS limit: "); print_uintx(vmx_read(GUEST_FS_LIMIT)); print(L"\r\n");
   print(L"Guest GS limit: "); print_uintx(vmx_read(GUEST_GS_LIMIT)); print(L"\r\n");*/
+
+  vmx_write(EPT_POINTER_FULL, hvm->st->ept_area | 0x18); // 5:3 (page-walk length), 2:0 (Mem. type UC)
+  ept_init(hvm);
+}
+
+
+void ept_init(HVM * hvm){
+  uint64_t rax, rbx, rcx, rdx;
+  uint64_t i, j, k;
+  uint64_t * pml4t = (uint64_t*)hvm->st->ept_area;
+  uint64_t * pdpt = pml4t + 512;
+  uint64_t * pdt;
+  uint8_t phys_addr_width;
+  uint64_t pml4e_count;
+  uint64_t increment;
+
+  //bsp_printf("IA32_VMX_EPT_VPID_CAP: %b\r\n", ept_capabilities);
+
+  if(features.ept_cap_2MB_page){
+    bsp_printf("2MB EPT pages supported.\r\n");
+    increment = 513 * 512;
+  }
+  if(features.ept_cap_1GB_page){
+    bsp_printf("1GB EPT pages supported.\r\n");
+    increment = 512;
+  }
+
+  rax = 0x80000008;
+  emu_cpuid(&rax, &rbx, &rcx, &rdx);
+  phys_addr_width = rax & 0xFF;
+
+  pml4e_count = (1ULL << (phys_addr_width - 30 - 9));
+  bsp_printf("Physical-address width: %u, pml4e_count: %u\r\n", phys_addr_width, pml4e_count);
+
+  // Setup identity memory mapping
+  for(i = 0; i < pml4e_count; ++i){
+    pml4t[i] = (uint64_t)pdpt | 0x7; // 2 (X), 1 (W), 0 (R)
+    pdt = pdpt + 512;
+
+    for(j = 0; j < 512; ++j){
+      if(features.ept_cap_1GB_page){
+        pdpt[j] = ((i << (30 + 9)) & 0xFF8000000000ULL) | ((j << 30) & 0x7FC0000000ULL) | 0x87; // 7 (1 GB page), 2 (X), 1 (W), 0 (R)
+      }
+      else if(features.ept_cap_2MB_page){
+        pdpt[j] = (uint64_t)pdt | 0x7; // 2 (X), 1 (W), 0 (R)
+
+        for(k = 0; k < 512; ++k){
+          //pdt[k] = ((i << 39) & 0xFF8000000000ULL) | ((j << 30) & 0x7FC0000000ULL) | ((k << 21) & 0x3FE00000) | 0x87; // 7 (1 GB page), 2 (X), 1 (W), 0 (R)
+          pdt[k] = (i << 39) | (j << 30) | (k << 21) | 0x87; // 7 (1 GB page), 2 (X), 1 (W), 0 (R)
+        }
+
+        pdt += 512;
+      }
+      else{
+        // TODO
+      }
+    }
+
+    pdpt += increment;
+  }
 }

@@ -1,6 +1,9 @@
 extern vmexit_handler
 
 global vmx_supported
+global vmx_ug_supported
+global vmx_ept_supported
+global vmx_vpid_supported
 global vmx_get_revision_and_struct_size
 global vmx_enable
 global vmx_switch_to_root_op
@@ -24,6 +27,31 @@ vmx_supported:
 	inc eax
 vmx_s_end:
 	ret
+
+vmx_ug_supported:
+	mov ecx,48bh ; IA32_VMX_PROCBASED_CTLS2
+	mov r8,7 ; Unrestricted guest
+	jmp vmx_check_capability_msr
+
+vmx_ept_supported:
+	mov ecx,48bh ; IA32_VMX_PROCBASED_CTLS2
+	mov r8,1
+	jmp vmx_check_capability_msr
+
+vmx_vpid_supported:
+	mov ecx,48bh ; IA32_VMX_PROCBASED_CTLS2
+	mov r8,5
+	jmp vmx_check_capability_msr
+
+vmx_check_capability_msr:
+	rdmsr
+	xor rax,rax
+	bt rdx,r8
+	jnc vmx_chk_cap_end
+	inc eax
+vmx_chk_cap_end:
+	ret
+	
 
 vmx_get_revision_and_struct_size:
 	push rdx
