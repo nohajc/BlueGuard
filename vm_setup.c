@@ -337,19 +337,124 @@ void vmcs_init(HVM * hvm){
   print(L"Guest GS limit: "); print_uintx(vmx_read(GUEST_GS_LIMIT)); print(L"\r\n");*/
 
   vmx_write(EPT_POINTER_FULL, hvm->st->ept_area | 0x18); // 5:3 (page-walk length), 2:0 (Mem. type UC)
-  ept_init(hvm);
 }
 
+uint64_t get_max_memory_addr(void){
+  UINTN mem_map_size = 0;
+  UINTN map_key, desc_size;
+  UINT32 desc_version;
+  uint64_t max_phys_addr = 0;
+  EFI_MEMORY_DESCRIPTOR * mem_map = NULL;
+  EFI_MEMORY_DESCRIPTOR * desc;
+  void * mem_map_end;
+  EFI_STATUS st;
 
-void ept_init(HVM * hvm){
+  BS->GetMemoryMap(&mem_map_size, mem_map, &map_key, &desc_size, &desc_version);
+  bsp_printf("mem_map_size: %u\r\n", mem_map_size);
+
+  BS->AllocatePool(EfiRuntimeServicesData, mem_map_size, (void**)&mem_map);
+  
+  do{
+    st = BS->GetMemoryMap(&mem_map_size, mem_map, &map_key, &desc_size, &desc_version);
+    if(st == EFI_BUFFER_TOO_SMALL){
+      mem_map_size += 128;
+      BS->FreePool(mem_map);
+      BS->AllocatePool(EfiRuntimeServicesData, mem_map_size, (void**)&mem_map);
+    }
+    else{
+      bsp_printf("mem_map_size: %u\r\n", mem_map_size);
+      break;
+    }
+  } while(true);
+
+  desc = mem_map;
+  mem_map_end = (uint8_t*)mem_map + mem_map_size;
+
+  while(desc != mem_map_end){
+    uint64_t phys_end = desc->PhysicalStart + (desc->NumberOfPages * 4096) - 1;
+    if(phys_end > max_phys_addr){
+      max_phys_addr = phys_end;
+    }
+
+    desc = (EFI_MEMORY_DESCRIPTOR*)((uint8_t*)desc + desc_size);
+  }
+
+  BS->FreePool(mem_map);
+
+  bsp_printf("max_phys_addr: 0x%x\r\n", max_phys_addr);
+  return max_phys_addr;
+}
+
+int ept_init(HVM * hvm){
   uint64_t rax, rbx, rcx, rdx;
   uint64_t i, j, k;
   uint64_t * pml4t = (uint64_t*)hvm->st->ept_area;
   uint64_t * pdpt = pml4t + 512;
   uint64_t * pdt;
   uint8_t phys_addr_width;
-  uint64_t pml4e_count;
+  uint64_t pml4e_count, pdpte_count, pdte_count;
+  int64_t tmp;
   uint64_t increment;
+  uint64_t max_phys_addr = get_max_memory_addr();
+  uint64_t max_addr_bits = 0;
+  EFI_STATUS err;
+
+  uint64_t ept_area_size;
+  uint64_t ept_capabilities = get_msr(MSR_IA32_VMX_EPT_VPID_CAP);
+  features.ept_cap_2MB_page = ept_capabilities & 0x10000;
+  features.ept_cap_1GB_page = ept_capabilities & 0x20000;
+
+
+  rax = 0x80000008;
+  emu_cpuid(&rax, &rbx, &rcx, &rdx);
+  phys_addr_width = rax & 0xFF;
+
+  pml4e_count = (1ULL << (phys_addr_width - 30 - 9));
+  bsp_printf("Physical-address width: %u, pml4e_count: %u\r\n", phys_addr_width, pml4e_count);
+
+
+  while(max_phys_addr){
+    ++max_addr_bits;
+    max_phys_addr >>= 1;
+  }
+
+  bsp_printf("Max address bits: %u\r\n", max_addr_bits);
+
+  pdte_count = 512;
+  pdpte_count = (1ULL << (max_addr_bits - 30));
+  tmp = max_addr_bits - 39;
+  if(tmp < 0) tmp = 0;
+  tmp = 1ULL << tmp;
+  if(tmp < pml4e_count){
+    pml4e_count = tmp;
+  }
+
+  bsp_printf("pml4e_count: %u, pdpte_count: %u, pdte_count: %u\r\n", pml4e_count, pdpte_count, pdte_count);
+
+  if(features.ept_cap_1GB_page){
+    //ept_area_size = 1 + 512;
+    ept_area_size = 1 + pml4e_count;
+  }
+  else if(features.ept_cap_2MB_page){
+    //ept_area_size = 1 + 512 + 512 * 512;
+    ept_area_size = 1 + pml4e_count + pdpte_count * pml4e_count;
+  }
+  else{
+    // Not implemented
+  }
+
+  hvm->st->ept_area = 0xFFFFFFFF;
+  err = BS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, ept_area_size, &hvm->st->ept_area); // Space for EPT PML4T and 512 PDPTs
+  if(err != EFI_SUCCESS){
+    return 0;
+  }
+
+  //ZeroMem((void*)st->ept_area, ept_area_size * 4096);
+  uint64_t * ept_ptr = (uint64_t*)hvm->st->ept_area;
+  uint64_t * ept_end = ept_ptr + ept_area_size * 512;
+  while(ept_ptr != ept_end){
+    *ept_ptr++ = 0;
+  }
 
   //bsp_printf("IA32_VMX_EPT_VPID_CAP: %b\r\n", ept_capabilities);
 
@@ -362,26 +467,19 @@ void ept_init(HVM * hvm){
     increment = 512;
   }
 
-  rax = 0x80000008;
-  emu_cpuid(&rax, &rbx, &rcx, &rdx);
-  phys_addr_width = rax & 0xFF;
-
-  pml4e_count = (1ULL << (phys_addr_width - 30 - 9));
-  bsp_printf("Physical-address width: %u, pml4e_count: %u\r\n", phys_addr_width, pml4e_count);
-
   // Setup identity memory mapping
   for(i = 0; i < pml4e_count; ++i){
     pml4t[i] = (uint64_t)pdpt | 0x7; // 2 (X), 1 (W), 0 (R)
     pdt = pdpt + 512;
 
-    for(j = 0; j < 512; ++j){
+    for(j = 0; j < pdpte_count; ++j){
       if(features.ept_cap_1GB_page){
-        pdpt[j] = ((i << (30 + 9)) & 0xFF8000000000ULL) | ((j << 30) & 0x7FC0000000ULL) | 0x87; // 7 (1 GB page), 2 (X), 1 (W), 0 (R)
+        pdpt[j] = (i << 39) | (j << 30) | 0x87; // 7 (1 GB page), 2 (X), 1 (W), 0 (R)
       }
       else if(features.ept_cap_2MB_page){
         pdpt[j] = (uint64_t)pdt | 0x7; // 2 (X), 1 (W), 0 (R)
 
-        for(k = 0; k < 512; ++k){
+        for(k = 0; k < pdte_count; ++k){
           //pdt[k] = ((i << 39) & 0xFF8000000000ULL) | ((j << 30) & 0x7FC0000000ULL) | ((k << 21) & 0x3FE00000) | 0x87; // 7 (1 GB page), 2 (X), 1 (W), 0 (R)
           pdt[k] = (i << 39) | (j << 30) | (k << 21) | 0x87; // 7 (1 GB page), 2 (X), 1 (W), 0 (R)
         }
@@ -389,10 +487,12 @@ void ept_init(HVM * hvm){
         pdt += 512;
       }
       else{
-        // TODO
+        // Not implemented
       }
     }
 
     pdpt += increment;
   }
+
+  return 1;
 }

@@ -325,33 +325,6 @@ int prepare_shared_hvm_tables(HVM * hvm){
     // TODO: Alloc and init classic 4 KB page tables
   }
 
-
-  uint64_t ept_area_size;
-  uint64_t ept_capabilities = get_msr(MSR_IA32_VMX_EPT_VPID_CAP);
-  features.ept_cap_2MB_page = ept_capabilities & 0x10000;
-  features.ept_cap_1GB_page = ept_capabilities & 0x20000;
-
-  if(features.ept_cap_1GB_page){
-    ept_area_size = 1 + 512;
-  }
-  else if(features.ept_cap_2MB_page){
-    ept_area_size = 1 + 512 + 512 * 512;
-  }
-
-  st->ept_area = 0xFFFFFFFF;
-  err = BS->AllocatePages(AllocateMaxAddress, EfiRuntimeServicesData, ept_area_size, &st->ept_area); // Space for EPT PML4T and 512 PDPTs
-  if(err != EFI_SUCCESS){
-    return 0;
-  }
-
-  //ZeroMem((void*)st->ept_area, ept_area_size * 4096);
-  uint64_t * ept_ptr = (uint64_t*)st->ept_area;
-  uint64_t * ept_end = ept_ptr + ept_area_size * 512;
-  while(ept_ptr != ept_end){
-    *ept_ptr++ = 0;
-  }
-
-
   //printf("Debug area: %x\r\n", st->debug_area);
 
   return 1;
@@ -518,9 +491,10 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     }*/
 
     vmcs_init(bsp_hvm);
+    ept_init(bsp_hvm);
     //print(L"GUEST_CR3: "); print_uintx(vmx_read(GUEST_CR3)); print(L"\r\n");
-    bsp_printf("Press a key to start VM.\r\n");
-    wait_for_key();
+    /*bsp_printf("Press a key to start VM.\r\n");
+    wait_for_key();*/
     bsp_printf("Starting VM...\r\n");
     vm_start();
     print(L"Hello from the Guest VM!\r\n");
