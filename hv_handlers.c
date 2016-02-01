@@ -250,7 +250,7 @@ void handle_sipi(GUEST_REGS * regs){
   //CopyMem((void*)(regs->hvm->st->debug_area + 4 * regs->hvm->cpu_id), &seg, 4);
 
   if(!seg){ // VMware bug - EXIT_QUALIFICATION is always zero
-    seg = 0x100;
+    seg = 0x100; // Windows 8 trampoline code starts at 0x1000
   }
 
   /*eip = (uint8_t*)(seg << 4);
@@ -284,8 +284,8 @@ void handle_sipi(GUEST_REGS * regs){
   //*(uint64_t*)0x16B2 = 0x90;
 
   resume_ap:
-  //vmx_write(GUEST_ACTIVITY_STATE, STATE_HLT);
-  vmx_write(GUEST_ACTIVITY_STATE, STATE_ACTIVE);
+  vmx_write(GUEST_ACTIVITY_STATE, STATE_HLT);
+  //vmx_write(GUEST_ACTIVITY_STATE, STATE_ACTIVE);
 }
 
 void vmexit_handler(GUEST_REGS * regs){

@@ -1,6 +1,6 @@
 CC=x86_64-w64-mingw32-gcc
 LD=x86_64-w64-mingw32-gcc
-CFLAGS=-ffreestanding -O0 -Wall -mno-ms-bitfields -g
+CFLAGS=-ffreestanding -O0 -Wall -Wno-unused-label -mno-ms-bitfields -g
 CPPFLAGS=-Ignu-efi/inc{,/x86_64,/protocol} -Ignu-efi/lib
 LDFLAGS=-nostdlib -Wl,-dll -shared -e efi_main -lgcc
 SUBSYS_APP=-Wl,--subsystem,10

@@ -439,52 +439,53 @@ void ap_entry64(uint8_t cpu){
 	bsp_printf("%u: GDT base = %x\r\n", cpu, ap_hvm[cpu].st->gdt_base);*/
 
 	if(vmx_supported()){
-        bsp_printf("%u: VMX is supported!\r\n", cpu);
-    }
-    else{
-        bsp_printf("%u: Error: VMX is not supported.\r\n", cpu);
-        goto msg_end;
-    }
+		bsp_printf("%u: VMX is supported!\r\n", cpu);
+	}
+	else{
+		bsp_printf("%u: Error: VMX is not supported.\r\n", cpu);
+		goto msg_end;
+	}
 
-    vmx_get_revision_and_struct_size(&vmx_rev, &struct_size);
+	vmx_get_revision_and_struct_size(&vmx_rev, &struct_size);
 
-    bsp_printf("%u: VMX revision: %u\r\n", cpu, vmx_rev);
-    bsp_printf("%u: Struct size: %u\r\n", cpu, struct_size);
+	bsp_printf("%u: VMX revision: %u\r\n", cpu, vmx_rev);
+	bsp_printf("%u: Struct size: %u\r\n", cpu, struct_size);
 
-    // Write revision ID at the start of VMXON-region
-    *(uint32_t*)ap_hvm[cpu].vmxon_region = vmx_rev;
-    vmx_enable(); // Set bit 13 of CR4 to 1 to enable the VMX operations
+	// Write revision ID at the start of VMXON-region
+	*(uint32_t*)ap_hvm[cpu].vmxon_region = vmx_rev;
+	vmx_enable(); // Set bit 13 of CR4 to 1 to enable the VMX operations
 
-    if(vmx_switch_to_root_op((void*)ap_hvm[cpu].vmxon_region)){
-      bsp_printf("%u: Switched to VMX-root-operation mode!\r\n", cpu);
-    }
-    else{
-      bsp_printf("%u: Error switching to VMX-root-operation mode.\r\n", cpu);
-      goto msg_end;
-    }
+	if(vmx_switch_to_root_op((void*)ap_hvm[cpu].vmxon_region)){
+		bsp_printf("%u: Switched to VMX-root-operation mode!\r\n", cpu);
+	}
+	else{
+		bsp_printf("%u: Error switching to VMX-root-operation mode.\r\n", cpu);
+		goto msg_end;
+	}
 
-    *(uint32_t*)ap_hvm[cpu].vmcs = vmx_rev;
-    if(vmx_vmcs_activate((void*)ap_hvm[cpu].vmcs)){
-      bsp_printf("%u: Activated VMCS!\r\n", cpu);
-    }
-    else{
-      bsp_printf("%u: Error activating VMCS.\r\n", cpu);
-      goto msg_end;
-    }
+	*(uint32_t*)ap_hvm[cpu].vmcs = vmx_rev;
+	if(vmx_vmcs_activate((void*)ap_hvm[cpu].vmcs)){
+		bsp_printf("%u: Activated VMCS!\r\n", cpu);
+	}
+	else{
+		bsp_printf("%u: Error activating VMCS.\r\n", cpu);
+		goto msg_end;
+	}
 
-    bsp_printf("%u: Debug area: %x\r\n", cpu, ap_hvm[cpu].st->debug_area);
+	bsp_printf("%u: Debug area: %x\r\n", cpu, ap_hvm[cpu].st->debug_area);
 
-    vmcs_init(&ap_hvm[cpu]);
-    ap_hvm[cpu].guest_CR0 &= ~(X86_CR0_PE | X86_CR0_PG);
-    ap_hvm[cpu].guest_CR4 &= ~X86_CR4_PAE;
-    if(features.pse){
-    	ap_hvm[cpu].guest_CR4 |= X86_CR4_PSE;
-    }
-    ap_hvm[cpu].guest_realmode = true;
-    ap_hvm[cpu].guest_realsegment = true;
-    
-    vmx_write(GUEST_CR3, ap_hvm[cpu].st->host_cr3);
-    /*vmx_write(GUEST_ES_SELECTOR, 0);
+	vmcs_init(&ap_hvm[cpu]);
+	/*ap_hvm[cpu].guest_CR0 &= ~(X86_CR0_PE | X86_CR0_PG);
+	ap_hvm[cpu].guest_CR4 &= ~X86_CR4_PAE;
+	if(features.pse){
+		ap_hvm[cpu].guest_CR4 |= X86_CR4_PSE;
+	}
+	ap_hvm[cpu].guest_realmode = true;
+	ap_hvm[cpu].guest_realsegment = true;
+
+	vmx_write(GUEST_CR3, ap_hvm[cpu].st->host_cr3);*/
+
+	/*vmx_write(GUEST_ES_SELECTOR, 0);
 	vmx_write(GUEST_CS_SELECTOR, 0);
 	vmx_write(GUEST_SS_SELECTOR, 0);
 	vmx_write(GUEST_DS_SELECTOR, 0);
@@ -511,11 +512,11 @@ void ap_entry64(uint8_t cpu){
 	vmx_write(GUEST_EFLAGS, EFLAGS_IOPL3 | EFLAGS_VM);
 	vmx_write(VM_ENTRY_CONTROLS, init_control_field(0, MSR_IA32_VMX_ENTRY_CTLS));*/
 
-    vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
+	vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
 
-    send_msg("MSG_END");
-    //vm_start();
-    return;
+	send_msg("MSG_END");
+	vm_start();
+	return;
 	/*uint64_t error_code;
 
 	vmx_write(GUEST_ESP, 0xFFFF);
