@@ -180,7 +180,8 @@ void handle_msr_write(GUEST_REGS * regs){
       break;
     case MSR_EFER:
       regs->hvm->guest_EFER = (regs->rax & 0xFFFFFFFF) | (regs->rdx << 32);
-      emu_wrmsr(regs->rcx, regs->rdx, (regs->rax & 0xFFFFFFFF) | EFER_LME);
+      //emu_wrmsr(regs->rcx, regs->rdx, (regs->rax & 0xFFFFFFFF) | EFER_LME);
+      vmx_write(GUEST_IA32_EFER, regs->hvm->guest_EFER);
       break;
     default:
       emu_wrmsr(regs->rcx, regs->rdx, (regs->rax & 0xFFFFFFFF));
@@ -215,20 +216,21 @@ void unknown_exit(uint64_t exit_reason){
   print(L"\r\n");*/
   print_err:
   return;
-  /*bsp_printf("Unknown exit.\r\n");
+  bsp_printf("Unknown exit.\r\n");
   bsp_printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
-  bsp_printf("Exit qualification: %u\r\n", exit_qualification);*/
+  bsp_printf("Exit qualification: %u\r\n", exit_qualification);
 }
 
 void handle_ept_misconfiguration(GUEST_REGS * regs){
   uint64_t guest_phys_addr = vmx_read(GUEST_PHYS_ADDR);
-  bsp_printf("EPT misconfiguration accessing address 0x%x\r\n", guest_phys_addr);
+  //bsp_printf("EPT misconfiguration accessing address 0x%x\r\n", guest_phys_addr);
 }
 
 void handle_failed_vmentry(uint64_t exit_reason){
   uint64_t exit_qualification =  vmx_read(EXIT_QUALIFICATION);
 
   print_err:
+  return;
   bsp_printf("Failed vmentry.\r\n");
   bsp_printf("Exit reason: %u\r\n", exit_reason & 0xFFFF);
   bsp_printf("Exit qualification: %u\r\n", exit_qualification);
@@ -244,16 +246,14 @@ void handle_sipi(GUEST_REGS * regs){
   uint8_t * eip;
   uint32_t magic = 0x1BAF2BAF;
 
-  CopyMem((void*)regs->hvm->st->debug_area, &magic, 4);
-  CopyMem((void*)(regs->hvm->st->debug_area + 4 * regs->hvm->cpu_id), &seg, 4);
+  //CopyMem((void*)regs->hvm->st->debug_area, &magic, 4);
+  //CopyMem((void*)(regs->hvm->st->debug_area + 4 * regs->hvm->cpu_id), &seg, 4);
 
   if(!seg){ // VMware bug - EXIT_QUALIFICATION is always zero
     seg = 0x100;
   }
 
-  eip = (uint8_t*)(seg << 4);
-
-  
+  /*eip = (uint8_t*)(seg << 4);
 
   vmx_write(GUEST_CS_SELECTOR, seg);
   vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) & ~VM_ENTRY_IA32E_MODE);
@@ -266,8 +266,18 @@ void handle_sipi(GUEST_REGS * regs){
     exec_instruction(regs, &eip);
   }
 
-  vmx_write(GUEST_EIP, (uint64_t)eip);
+  vmx_write(GUEST_EIP, (uint64_t)eip);*/
   vmx_write(GUEST_ESP, (uint64_t)ap_stacks + regs->hvm->cpu_id * 4096);
+
+  vmx_write(GUEST_CS_SELECTOR, seg);
+  vmx_write(GUEST_CS_BASE, seg << 4);
+  vmx_write(GUEST_CS_LIMIT, 0xFFFF);
+  vmx_write(GUEST_EIP, 0);
+  vmx_write(VM_ENTRY_CONTROLS, vmx_read(VM_ENTRY_CONTROLS) & ~VM_ENTRY_IA32E_MODE);
+  regs->hvm->guest_EFER = ~(EFER_LME | EFER_LMA); // Disable long mode
+  vmx_write(GUEST_IA32_EFER, regs->hvm->guest_EFER);
+  vmx_write(GUEST_CR4, regs->hvm->guest_CR4); // Disable PAE, enable PSE (if supported)
+  vmx_write(GUEST_CR0, regs->hvm->guest_CR0); // Disable PE, PG - enter real mode
 
   // Inject brakpoint
   //*(uint8_t*)0x16B1 = 0xCC;

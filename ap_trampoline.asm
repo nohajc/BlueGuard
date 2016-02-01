@@ -30,19 +30,19 @@ init_tramp:
 	pop ds ; We have data in the code segment
 
 ; Enable the A20 gate
-;set_A20_ap:
-;	in al, 0x64
-;	test al, 0x02
-;	jnz set_A20_ap
-;	mov al, 0xD1
-;	out 0x64, al
-;check_A20_ap:
-;	in al, 0x64
-;	test al, 0x02
-;	jnz check_A20_ap
-;	mov al, 0xDF
-;	out 0x60, al
-;
+set_A20_ap:
+	in al, 0x64
+	test al, 0x02
+	jnz set_A20_ap
+	mov al, 0xD1
+	out 0x64, al
+check_A20_ap:
+	in al, 0x64
+	test al, 0x02
+	jnz check_A20_ap
+	mov al, 0xDF
+	out 0x60, al
+
 	call ip0
 ip0:
 	pop bx ; Get IP
@@ -110,6 +110,9 @@ ap_tramp64:
 	mov ss,ax
 	mov fs,ax
 	mov gs,ax
+	; ENABLE LAPIC
+	mov rdi,[LAPIC_addr]
+	mov [rdi+0xF0],dword 0x1FF
 	; SETUP STACK
 	mov ebx,ebp   ; get CPU number (n-th activated)
 	and ebx,0xFF

@@ -380,6 +380,14 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
         goto epilog;
     }
 
+    if(vmx_guest_efer_supported()){
+      printf("Guest EFER supported!\r\n");
+    }
+    else{
+        printf("Error: Guest EFER not supported.\r\n");
+        goto epilog;
+    }
+
     vmx_get_revision_and_struct_size(&vmx_rev, &struct_size);
 
     print(L"VMX revision: ");

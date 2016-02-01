@@ -475,7 +475,7 @@ void ap_entry64(uint8_t cpu){
     bsp_printf("%u: Debug area: %x\r\n", cpu, ap_hvm[cpu].st->debug_area);
 
     vmcs_init(&ap_hvm[cpu]);
-    ap_hvm[cpu].guest_CR0 &= ~X86_CR0_PE;
+    ap_hvm[cpu].guest_CR0 &= ~(X86_CR0_PE | X86_CR0_PG);
     ap_hvm[cpu].guest_CR4 &= ~X86_CR4_PAE;
     if(features.pse){
     	ap_hvm[cpu].guest_CR4 |= X86_CR4_PSE;

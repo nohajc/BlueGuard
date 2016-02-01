@@ -16,6 +16,8 @@
 #define MSR_IA32_VMX_PROCBASED_CTLS2	0x48b
 #define MSR_IA32_VMX_EXIT_CTLS		0x483
 #define MSR_IA32_VMX_ENTRY_CTLS		0x484
+#define MSR_IA32_VMX_TRUE_EXIT_CTLS 0x48f
+#define MSR_IA32_VMX_TRUE_ENTRY_CTLS 0x490
 
 #define MSR_IA32_VMX_CR0_FIXED0     0x486
 #define MSR_IA32_VMX_CR0_FIXED1     0x487
@@ -114,6 +116,8 @@ enum{
   VMCS_LINK_POINTER_HIGH = 0x00002801,
   GUEST_IA32_DEBUGCTL = 0x00002802,
   GUEST_IA32_DEBUGCTL_HIGH = 0x00002803,
+  GUEST_IA32_EFER = 0x00002806,
+  GUEST_IA32_EFER_HIGH = 0x00002807,
   // 64 bits Host − State Field
   HOST_IA32_PERF_GLOBAL_CTRL = 0x00002C04,
   HOST_IA32_PERF_GLOBAL_CTRL_HIG = 0x00002C05,
@@ -328,6 +332,7 @@ uint64_t vmx_read(uint64_t index);
 void vmx_launch(void);
 void vmx_exit(void);
 void vmx_ret(void);
+int vmx_guest_efer_supported(void);
 
 void vmx_enable_a20_line(void);
 void vmx_disable_a20_line(void);

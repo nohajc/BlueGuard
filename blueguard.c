@@ -95,7 +95,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
 
     err = BS->StartImage(win_bootmgr_image, NULL, NULL);
 
-    FreePool(win_bootmgr_path);    
+    FreePool(win_bootmgr_path);
     root_dir->Close(root_dir);
  
     return err;

@@ -168,11 +168,13 @@ void vmcs_init(HVM * hvm){
   vmx_write(GUEST_ACTIVITY_STATE, STATE_ACTIVE);
   vmx_write(GUEST_PENDING_DBG_EXCEPTIONS, 0);
 
-  vmx_write(CR0_GUEST_HOST_MASK, X86_CR0_PG);
-  // TODO: Enable this again, maybe?
+  //vmx_write(CR0_GUEST_HOST_MASK, X86_CR0_PG);
+  vmx_write(CR0_GUEST_HOST_MASK, 0);
+
   vmx_write(CR4_GUEST_HOST_MASK, X86_CR4_VMXE); //disable vmexit 0f mov to cr4 except for X86_CR4_VMXE
 
-  vmx_write(CR0_READ_SHADOW, (get_cr4 () & X86_CR0_PG) | X86_CR0_PG);
+  //vmx_write(CR0_READ_SHADOW, (get_cr4 () & X86_CR0_PG) | X86_CR0_PG);
+  vmx_write(CR0_READ_SHADOW, 0);
 
   vmx_write(CR4_READ_SHADOW, 0);
   vmx_write(CR3_TARGET_VALUE0, 0);      //no use
@@ -285,8 +287,8 @@ void vmcs_init(HVM * hvm){
   vmx_write(SECONDARY_CPU_BASED_VM_EXEC_CONTROL, init_control_field(VM_EXEC_UG | VM_EXEC_EPT, MSR_IA32_VMX_PROCBASED_CTLS2));
   //print(L"CPU_BASED_VM_EXEC_CONTROL: "); print_uintb(vmx_read(PRIMARY_CPU_BASED_VM_EXEC_CONTROL)); print(L"\r\n");
 
-  vmx_write(VM_EXIT_CONTROLS, init_control_field(VM_EXIT_IA32E_MODE | VM_EXIT_ACK_INTR_ON_EXIT, MSR_IA32_VMX_EXIT_CTLS));
-  vmx_write(VM_ENTRY_CONTROLS, init_control_field(VM_ENTRY_IA32E_MODE, MSR_IA32_VMX_ENTRY_CTLS));
+  vmx_write(VM_EXIT_CONTROLS, init_control_field(VM_EXIT_IA32E_MODE | VM_EXIT_SAVE_IA32_EFER | VM_EXIT_ACK_INTR_ON_EXIT, MSR_IA32_VMX_EXIT_CTLS));
+  vmx_write(VM_ENTRY_CONTROLS, init_control_field(VM_ENTRY_IA32E_MODE | VM_ENTRY_LOAD_IA32_EFER, MSR_IA32_VMX_ENTRY_CTLS));
 
   vmx_write(PAGE_FAULT_ERROR_CODE_MASK, 0);
   vmx_write(PAGE_FAULT_ERROR_CODE_MATCH, 0);
@@ -298,6 +300,7 @@ void vmcs_init(HVM * hvm){
   vmx_write(VM_ENTRY_INTR_INFO_FIELD, 0);
 
   hvm->guest_EFER = get_msr(MSR_EFER);
+  vmx_write(GUEST_IA32_EFER, hvm->guest_EFER);
 
   /*print(L"DEBUG:\r\n");
   print(L"CR0: "); print_uintb(get_cr0()); print(L"\r\n");
@@ -402,7 +405,8 @@ int ept_init(HVM * hvm){
   uint64_t ept_area_size;
   uint64_t ept_capabilities = get_msr(MSR_IA32_VMX_EPT_VPID_CAP);
   features.ept_cap_2MB_page = ept_capabilities & 0x10000;
-  features.ept_cap_1GB_page = ept_capabilities & 0x20000;
+  //features.ept_cap_1GB_page = ept_capabilities & 0x20000;
+  features.ept_cap_1GB_page = 0;
 
 
   rax = 0x80000008;
