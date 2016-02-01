@@ -3,8 +3,13 @@
 
 #include "vmx_api.h"
 
+#define EPT_ENABLED 0
+
 typedef struct{
 	bool pse;
+	bool ept;
+	bool ug;
+	bool vpid;
 	bool ept_cap_2MB_page;
 	bool ept_cap_1GB_page;
 } FEATURES;

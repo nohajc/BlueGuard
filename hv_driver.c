@@ -358,26 +358,26 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
 
     if(vmx_ug_supported()){
         printf("VMX Unrestricted Guest supported!\r\n");
+        features.ug = true;
     }
     else{
-        printf("Error: VMX Unrestricted Guest not supported.\r\n");
-        goto epilog;
+        features.ug = false;
     }
 
     if(vmx_ept_supported()){
         printf("VMX EPT supported!\r\n");
+        features.ept = true;
     }
     else{
-        printf("Error: VMX EPT not supported.\r\n");
-        goto epilog;
+        features.ept = false;
     }
 
     if(vmx_vpid_supported()){
         printf("VMX VPID supported!\r\n");
+        features.vpid = true;
     }
     else{
-        printf("Error: VMX EPT not supported.\r\n");
-        goto epilog;
+        features.vpid = false;
     }
 
     if(vmx_guest_efer_supported()){
@@ -499,7 +499,11 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE * sys_table)
     }*/
 
     vmcs_init(bsp_hvm);
-    ept_init(bsp_hvm);
+#if EPT_ENABLED
+    if(features.ept){
+      ept_init(bsp_hvm);
+    }
+#endif
     //print(L"GUEST_CR3: "); print_uintx(vmx_read(GUEST_CR3)); print(L"\r\n");
     /*bsp_printf("Press a key to start VM.\r\n");
     wait_for_key();*/

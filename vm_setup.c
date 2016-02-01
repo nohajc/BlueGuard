@@ -283,8 +283,14 @@ void vmcs_init(HVM * hvm){
   vmx_write(PIN_BASED_VM_EXEC_CONTROL, init_control_field(0, MSR_IA32_VMX_PINBASED_CTLS));
 
   //CPU_BASED_ACTIVATE_MSR_BITMAP
+#if EPT_ENABLED
   vmx_write(PRIMARY_CPU_BASED_VM_EXEC_CONTROL, init_control_field(VM_EXEC_PROCBASED_CTLS2_ENABLE, MSR_IA32_VMX_PROCBASED_CTLS));
   vmx_write(SECONDARY_CPU_BASED_VM_EXEC_CONTROL, init_control_field(VM_EXEC_UG | VM_EXEC_EPT, MSR_IA32_VMX_PROCBASED_CTLS2));
+  vmx_write(EPT_POINTER_FULL, hvm->st->ept_area | 0x18); // 5:3 (page-walk length), 2:0 (Mem. type UC)
+#else
+  vmx_write(PRIMARY_CPU_BASED_VM_EXEC_CONTROL, init_control_field(0, MSR_IA32_VMX_PROCBASED_CTLS));
+#endif
+
   //print(L"CPU_BASED_VM_EXEC_CONTROL: "); print_uintb(vmx_read(PRIMARY_CPU_BASED_VM_EXEC_CONTROL)); print(L"\r\n");
 
   vmx_write(VM_EXIT_CONTROLS, init_control_field(VM_EXIT_IA32E_MODE | VM_EXIT_SAVE_IA32_EFER | VM_EXIT_ACK_INTR_ON_EXIT, MSR_IA32_VMX_EXIT_CTLS));
@@ -338,8 +344,6 @@ void vmcs_init(HVM * hvm){
   print(L"Guest ES limit: "); print_uintx(vmx_read(GUEST_ES_LIMIT)); print(L"\r\n");
   print(L"Guest FS limit: "); print_uintx(vmx_read(GUEST_FS_LIMIT)); print(L"\r\n");
   print(L"Guest GS limit: "); print_uintx(vmx_read(GUEST_GS_LIMIT)); print(L"\r\n");*/
-
-  vmx_write(EPT_POINTER_FULL, hvm->st->ept_area | 0x18); // 5:3 (page-walk length), 2:0 (Mem. type UC)
 }
 
 uint64_t get_max_memory_addr(void){

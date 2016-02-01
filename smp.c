@@ -514,7 +514,7 @@ void ap_entry64(uint8_t cpu){
     vmx_write(GUEST_ACTIVITY_STATE, STATE_WAIT_FOR_SIPI);
 
     send_msg("MSG_END");
-    vm_start();
+    //vm_start();
     return;
 	/*uint64_t error_code;
 
